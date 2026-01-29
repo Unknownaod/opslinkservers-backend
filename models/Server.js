@@ -18,7 +18,12 @@ const serverSchema = new mongoose.Schema({
     userID: String,
     tag: String
   },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  reports: [{ // new field for storing reports
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    reason: String,
+    createdAt: { type: Date, default: Date.now }
+  }]
 });
 
 module.exports = mongoose.model('Server', serverSchema);
