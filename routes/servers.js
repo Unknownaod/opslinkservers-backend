@@ -143,4 +143,36 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
   }
 });
 
+// Report a server
+router.post('/:id/report', auth, async (req, res) => {
+  const { reason } = req.body;
+  
+  if (!reason) {
+    return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
+  }
+
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    // Add report to the server
+    server.reports.push({
+      user: req.user._id,
+      reason: reason
+    });
+
+    await server.save();
+
+    // Notify admin (or any preferred notification)
+    await sendDiscordNotification(
+      `A server "${server.name}" has been reported by ${req.user.discordUsername} with reason: ${reason}.`
+    );
+
+    res.json({ message: 'Server reported successfully. It will be reviewed by an admin.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to report the server' });
+  }
+});
+
 module.exports = router;
