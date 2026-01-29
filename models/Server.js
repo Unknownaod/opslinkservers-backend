@@ -11,6 +11,7 @@ const serverSchema = new mongoose.Schema({
   website: String,
   nsfw: { type: Boolean, default: false },
   tags: [String],
+  logo: { type: String, required: true }, // URL or path to server logo
   status: { type: String, enum: ['pending','approved','denied'], default: 'pending' },
   submitter: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   submitterDiscord: {
