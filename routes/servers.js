@@ -11,7 +11,7 @@ const fs = require('fs');
 const router = express.Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
 
-// --- Multer setup for logo uploads (kept in case needed for legacy uploads) ---
+// --- Multer setup for logo uploads (legacy support) ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = 'uploads/logos';
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     const servers = await Server.find({ status: 'approved' }).lean();
     const formattedServers = servers.map(s => ({
       ...s,
-      logo: s.logo ? s.logo : null // Already a Discord CDN URL
+      logo: s.logo || null // Already a Discord CDN or media URL
     }));
     res.json(formattedServers);
   } catch (err) {
@@ -117,13 +117,14 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (updated for Discord CDN logo & tags) ---
+// --- Submit server (Discord CDN + Media support + tags) ---
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validate Discord CDN URL
-    if (!data.logo || !data.logo.startsWith('https://cdn.discordapp.com/')) {
+    // --- ALLOW BOTH CDN & MEDIA URLs ---
+    const logoRegex = /^https:\/\/(cdn|media)\.discord(app)?\.net\/attachments\/\d+\/\d+\/.+$/i;
+    if (!data.logo || !logoRegex.test(data.logo)) {
       return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL.' });
     }
 
@@ -144,7 +145,7 @@ router.post('/', auth, async (req, res) => {
       type: data.type || undefined,
       rules: data.rules || undefined,
       website: data.website || undefined,
-      logo: data.logo, // Discord CDN URL
+      logo: data.logo, // Discord CDN or media URL
       nsfw: data.nsfw === 'true',
       tags: tags,
       submitter: req.user._id,
