@@ -22,18 +22,20 @@ router.get('/', async (req, res) => {
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
     const servers = await Server.find({}).lean();
-    const fullServers = await Promise.all(servers.map(async s => {
-      const comments = await Comment.find({ server: s._id }).sort({ createdAt: -1 }).lean();
-      return {
-        ...s,
-        comments: comments.map(c => ({
-          user: c.userDiscord.username,
-          tag: c.userDiscord.tag,
-          text: c.text,
-          createdAt: c.createdAt
-        }))
-      };
-    }));
+    const fullServers = await Promise.all(
+      servers.map(async s => {
+        const comments = await Comment.find({ server: s._id }).sort({ createdAt: -1 }).lean();
+        return {
+          ...s,
+          comments: comments.map(c => ({
+            user: c.userDiscord.username,
+            tag: c.userDiscord.tag,
+            text: c.text,
+            createdAt: c.createdAt
+          }))
+        };
+      })
+    );
     res.json(fullServers);
   } catch (err) {
     console.error('Fetch all servers error:', err);
@@ -63,12 +65,12 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (any image URL allowed) ---
+// --- Submit server ---
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // --- Validate logo ---
+    // Validate logo
     if (!data.logo || typeof data.logo !== 'string') {
       return res.status(400).json({ error: 'Server logo is required.' });
     }
@@ -77,10 +79,10 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ error: 'Logo must be a direct image URL (png, jpg, jpeg, webp, gif, svg).' });
     }
 
-    // --- Members ---
+    // Members
     const members = data.members ? Number(data.members) : undefined;
 
-    // --- Tags ---
+    // Tags
     let tags = [];
     if (data['tags[]']) {
       let incoming = data['tags[]'];
@@ -92,7 +94,11 @@ router.post('/', auth, async (req, res) => {
         .slice(0, 5);
     }
 
-    // --- Create server ---
+    // Require Discord bot integration
+    if (!data.discordServerId) {
+      return res.status(400).json({ error: 'You must provide your Discord server ID for bot integration.' });
+    }
+
     const server = new Server({
       name: data.name,
       invite: data.invite,
@@ -105,7 +111,7 @@ router.post('/', auth, async (req, res) => {
       logo: logo,
       nsfw: data.nsfw === 'true',
       tags: tags,
-      discordServerId: data.discordServerId || undefined, // NEW: Discord bot integration
+      discordServerId: data.discordServerId,
       submitter: req.user._id,
       submitterDiscord: {
         username: req.user.discordUsername,
@@ -116,14 +122,12 @@ router.post('/', auth, async (req, res) => {
     });
 
     await server.save();
+
     await sendDiscordNotification(
-      `New server submission: **${server.name}** by ${server.submitterDiscord.username}\nInvite: ${server.invite}`
+      `New server submission: **${server.name}** by ${server.submitterDiscord.username}\nInvite: ${server.invite}\nDiscord Server ID: ${server.discordServerId}`
     );
 
-    res.status(201).json({
-      message: 'Server submitted! Awaiting approval.',
-      server
-    });
+    res.status(201).json({ message: 'Server submitted! Awaiting approval.', server });
   } catch (err) {
     console.error('Submit server error:', err);
     res.status(500).json({ error: 'Submission failed. Please check your input.' });
@@ -152,12 +156,12 @@ router.post('/:id/comments', auth, async (req, res) => {
 });
 
 // --- Update server members count (by bot) ---
-router.patch('/:id/members', async (req, res) => {
+router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
     const { members } = req.body;
     if (members == null || isNaN(members)) return res.status(400).json({ error: 'Invalid members count.' });
 
-    const server = await Server.findById(req.params.id);
+    const server = await Server.findOne({ discordServerId: req.params.discordServerId });
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
     server.members = Number(members);
