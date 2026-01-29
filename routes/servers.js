@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 
 const router = express.Router();
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
 
 // --- Multer setup for logo uploads ---
 const storage = multer.diskStorage({
@@ -25,7 +26,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Max 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.gif'].includes(ext)) cb(null, true);
@@ -37,7 +38,11 @@ const upload = multer({
 router.get('/', async (req, res) => {
   try {
     const servers = await Server.find({ status: 'approved' }).lean();
-    res.json(servers);
+    const formattedServers = servers.map(s => ({
+      ...s,
+      logo: s.logo ? `${BASE_URL}/${s.logo.replace(/\\/g, '/')}` : null
+    }));
+    res.json(formattedServers);
   } catch (err) {
     console.error('Fetch approved servers error:', err);
     res.status(500).json({ error: 'Failed to fetch approved servers' });
@@ -48,33 +53,40 @@ router.get('/', async (req, res) => {
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
     const servers = await Server.find({}).lean();
-
-    const fullServers = servers.map(s => ({
-      _id: s._id,
-      name: s.name,
-      invite: s.invite,
-      description: s.description,
-      type: s.type || null,
-      members: s.members || null,
-      language: s.language || null,
-      rules: s.rules || null,
-      website: s.website || null,
-      logo: s.logo || null,
-      nsfw: s.nsfw || false,
-      tags: s.tags || [],
-      status: s.status || 'pending',
-      rejectionReason: s.rejectionReason || null,
-      submitter: s.submitter || null,
-      submitterDiscord: s.submitterDiscord || null,
-      createdAt: s.createdAt || null,
-      updatedAt: s.updatedAt || null,
-      reports: s.reports.map(r => ({
-        user: r.user || null,
-        reason: r.reason,
-        createdAt: r.createdAt
-      })) || []
+    const fullServers = await Promise.all(servers.map(async s => {
+      const comments = await Comment.find({ server: s._id }).sort({ createdAt: -1 }).lean();
+      return {
+        _id: s._id,
+        name: s.name,
+        invite: s.invite,
+        description: s.description,
+        type: s.type || null,
+        members: s.members || null,
+        language: s.language || null,
+        rules: s.rules || null,
+        website: s.website || null,
+        logo: s.logo ? `${BASE_URL}/${s.logo.replace(/\\/g, '/')}` : null,
+        nsfw: s.nsfw || false,
+        tags: s.tags || [],
+        status: s.status || 'pending',
+        rejectionReason: s.rejectionReason || null,
+        submitter: s.submitter || null,
+        submitterDiscord: s.submitterDiscord || null,
+        createdAt: s.createdAt || null,
+        updatedAt: s.updatedAt || null,
+        reports: (s.reports || []).map(r => ({
+          user: r.user || null,
+          reason: r.reason || null,
+          createdAt: r.createdAt || null
+        })),
+        comments: comments.map(c => ({
+          user: c.userDiscord.username,
+          tag: c.userDiscord.tag,
+          text: c.text,
+          createdAt: c.createdAt
+        }))
+      };
     }));
-
     res.json(fullServers);
   } catch (err) {
     console.error('Fetch all servers error:', err);
@@ -91,6 +103,7 @@ router.get('/:id', async (req, res) => {
     const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
     res.json({
       ...server,
+      logo: server.logo ? `${BASE_URL}/${server.logo.replace(/\\/g, '/')}` : null,
       comments: comments.map(c => ({
         user: c.userDiscord.username,
         tag: c.userDiscord.tag,
@@ -104,23 +117,15 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (requires login) ---
+// --- Submit server ---
 router.post('/', auth, upload.single('logo'), async (req, res) => {
   try {
     const data = req.body;
+    if (!req.file) return res.status(400).json({ error: 'Server logo is required.' });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'Server logo is required.' });
-    }
-
-    // Ensure members is a number
     const members = data.members ? Number(data.members) : undefined;
-
-    // Handle tags (ensure array)
     let tags = [];
-    if (data['tags[]']) {
-      tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
-    }
+    if (data['tags[]']) tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
 
     const server = new Server({
       name: data.name,
@@ -144,19 +149,24 @@ router.post('/', auth, upload.single('logo'), async (req, res) => {
     });
 
     await server.save();
-
     await sendDiscordNotification(
       `New server submission: **${server.name}** by ${server.submitterDiscord.username}\nInvite: ${server.invite}`
     );
 
-    res.status(201).json({ message: 'Server submitted! Awaiting approval.', server });
+    res.status(201).json({
+      message: 'Server submitted! Awaiting approval.',
+      server: {
+        ...server.toObject(),
+        logo: `${BASE_URL}/${server.logo.replace(/\\/g, '/')}`
+      }
+    });
   } catch (err) {
     console.error('Submit server error:', err);
     res.status(500).json({ error: 'Submission failed. Please check your input.' });
   }
 });
 
-// --- Post a comment (requires login) ---
+// --- Post comment ---
 router.post('/:id/comments', auth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
@@ -177,12 +187,11 @@ router.post('/:id/comments', auth, async (req, res) => {
   }
 });
 
-// --- Admin: Update server status ---
+// --- Update server status ---
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   const { status, rejectionReason } = req.body;
-  if (!['approved', 'denied', 'pending'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status value' });
-  }
+  if (!['approved', 'denied', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status value' });
+
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -202,7 +211,7 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   }
 });
 
-// --- Admin: Delete a server ---
+// --- Delete a server ---
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
@@ -211,9 +220,7 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     await Comment.deleteMany({ server: server._id });
     await server.deleteOne();
 
-    await sendDiscordNotification(
-      `Server "${server.name}" has been deleted by an admin.`
-    );
+    await sendDiscordNotification(`Server "${server.name}" has been deleted by an admin.`);
 
     res.json({ message: 'Server deleted successfully.' });
   } catch (err) {
@@ -225,7 +232,6 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
 // --- Report a server ---
 router.post('/:id/report', auth, async (req, res) => {
   const { reason } = req.body;
-
   if (!reason) return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
 
   try {
