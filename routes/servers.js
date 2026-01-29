@@ -49,10 +49,14 @@ router.get('/:id', async (req, res) => {
 // Submit server (requires login)
 router.post('/', auth, async (req, res) => {
   const data = req.body;
+
+  // Ensure the tags are an array of up to 5 custom tags
+  const tags = data.tags && Array.isArray(data.tags) ? data.tags.slice(0, 5) : [];
+
   try {
     const server = new Server({
       ...data,
-      tags: data.tags || [],
+      tags: tags,
       nsfw: data.nsfw || false,
       submitter: req.user._id,
       submitterDiscord: {
@@ -62,6 +66,7 @@ router.post('/', auth, async (req, res) => {
       },
       status: 'pending'
     });
+
     await server.save();
 
     await sendDiscordNotification(
@@ -146,7 +151,7 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
 // Report a server
 router.post('/:id/report', auth, async (req, res) => {
   const { reason } = req.body;
-  
+
   if (!reason) {
     return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
   }
