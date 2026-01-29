@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
       .select('name invite description type members logo tags');
     res.json(servers);
   } catch (err) {
-    console.error(err);
+    console.error('Fetch approved servers error:', err);
     res.status(500).json({ error: 'Failed to fetch approved servers' });
   }
 });
@@ -52,7 +52,7 @@ router.get('/all', auth, adminAuth, async (req, res) => {
       .select('name invite status submitter logo tags');
     res.json(servers);
   } catch (err) {
-    console.error(err);
+    console.error('Fetch all servers error:', err);
     res.status(500).json({ error: 'Failed to fetch all servers' });
   }
 });
@@ -69,7 +69,7 @@ router.get('/:id', async (req, res) => {
       comments: comments.map(c => ({ user: c.userDiscord.username, text: c.text }))
     });
   } catch (err) {
-    console.error(err);
+    console.error('Fetch server error:', err);
     res.status(500).json({ error: 'Failed to fetch server' });
   }
 });
@@ -83,13 +83,27 @@ router.post('/', auth, upload.single('logo'), async (req, res) => {
       return res.status(400).json({ error: 'Server logo is required.' });
     }
 
-    const tags = data.tags && Array.isArray(data.tags) ? data.tags.slice(0, 5) : [];
+    // Ensure members is a number
+    const members = data.members ? Number(data.members) : undefined;
+
+    // Handle tags (ensure array)
+    let tags = [];
+    if (data['tags[]']) {
+      tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
+    }
 
     const server = new Server({
-      ...data,
-      logo: req.file.path, // save logo path
+      name: data.name,
+      invite: data.invite,
+      description: data.description,
+      language: data.language || undefined,
+      members: members,
+      type: data.type || undefined,
+      rules: data.rules || undefined,
+      website: data.website || undefined,
+      logo: req.file.path,
+      nsfw: data.nsfw === 'true',
       tags: tags,
-      nsfw: data.nsfw === 'true' || false,
       submitter: req.user._id,
       submitterDiscord: {
         username: req.user.discordUsername,
@@ -107,8 +121,8 @@ router.post('/', auth, upload.single('logo'), async (req, res) => {
 
     res.status(201).json({ message: 'Server submitted! Awaiting approval.', server });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Submission failed' });
+    console.error('Submit server error:', err);
+    res.status(500).json({ error: 'Submission failed. Please check your input.' });
   }
 });
 
@@ -128,7 +142,7 @@ router.post('/:id/comments', auth, async (req, res) => {
     await comment.save();
     res.status(201).json({ message: 'Comment posted' });
   } catch (err) {
-    console.error(err);
+    console.error('Post comment error:', err);
     res.status(500).json({ error: 'Failed to post comment' });
   }
 });
@@ -153,7 +167,7 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
 
     res.json({ message: `Server ${status} successfully.` });
   } catch (err) {
-    console.error(err);
+    console.error('Update server status error:', err);
     res.status(500).json({ error: 'Failed to update server status' });
   }
 });
@@ -173,7 +187,7 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
 
     res.json({ message: 'Server deleted successfully.' });
   } catch (err) {
-    console.error(err);
+    console.error('Delete server error:', err);
     res.status(500).json({ error: 'Failed to delete server' });
   }
 });
@@ -197,7 +211,7 @@ router.post('/:id/report', auth, async (req, res) => {
 
     res.json({ message: 'Server reported successfully. It will be reviewed by an admin.' });
   } catch (err) {
-    console.error(err);
+    console.error('Report server error:', err);
     res.status(500).json({ error: 'Failed to report the server' });
   }
 });
