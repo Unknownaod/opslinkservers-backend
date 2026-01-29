@@ -36,8 +36,7 @@ const upload = multer({
 // --- Public: Get all approved servers ---
 router.get('/', async (req, res) => {
   try {
-    const servers = await Server.find({ status: 'approved' })
-      .select('name invite description type members logo tags');
+    const servers = await Server.find({ status: 'approved' }).lean();
     res.json(servers);
   } catch (err) {
     console.error('Fetch approved servers error:', err);
@@ -45,12 +44,38 @@ router.get('/', async (req, res) => {
   }
 });
 
-// --- Admin: Get all servers ---
+// --- Admin: Get all servers with full info ---
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
-    const servers = await Server.find({})
-      .select('name invite status submitter logo tags');
-    res.json(servers);
+    const servers = await Server.find({}).lean();
+
+    const fullServers = servers.map(s => ({
+      _id: s._id,
+      name: s.name,
+      invite: s.invite,
+      description: s.description,
+      type: s.type || null,
+      members: s.members || null,
+      language: s.language || null,
+      rules: s.rules || null,
+      website: s.website || null,
+      logo: s.logo || null,
+      nsfw: s.nsfw || false,
+      tags: s.tags || [],
+      status: s.status || 'pending',
+      rejectionReason: s.rejectionReason || null,
+      submitter: s.submitter || null,
+      submitterDiscord: s.submitterDiscord || null,
+      createdAt: s.createdAt || null,
+      updatedAt: s.updatedAt || null,
+      reports: s.reports.map(r => ({
+        user: r.user || null,
+        reason: r.reason,
+        createdAt: r.createdAt
+      })) || []
+    }));
+
+    res.json(fullServers);
   } catch (err) {
     console.error('Fetch all servers error:', err);
     res.status(500).json({ error: 'Failed to fetch all servers' });
@@ -60,13 +85,18 @@ router.get('/all', auth, adminAuth, async (req, res) => {
 // --- Get single server with comments ---
 router.get('/:id', async (req, res) => {
   try {
-    const server = await Server.findById(req.params.id);
+    const server = await Server.findById(req.params.id).lean();
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 });
+    const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
     res.json({
-      ...server.toObject(),
-      comments: comments.map(c => ({ user: c.userDiscord.username, text: c.text }))
+      ...server,
+      comments: comments.map(c => ({
+        user: c.userDiscord.username,
+        tag: c.userDiscord.tag,
+        text: c.text,
+        createdAt: c.createdAt
+      }))
     });
   } catch (err) {
     console.error('Fetch server error:', err);
@@ -140,7 +170,7 @@ router.post('/:id/comments', auth, async (req, res) => {
     });
 
     await comment.save();
-    res.status(201).json({ message: 'Comment posted' });
+    res.status(201).json({ message: 'Comment posted', comment });
   } catch (err) {
     console.error('Post comment error:', err);
     res.status(500).json({ error: 'Failed to post comment' });
@@ -168,7 +198,7 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
     res.json({ message: `Server ${status} successfully.` });
   } catch (err) {
     console.error('Update server status error:', err);
-    res.status(500).json({ error: 'Failed to update server status' });
+    res.status(500).json({ error: 'Failed to update server' });
   }
 });
 
