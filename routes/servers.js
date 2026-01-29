@@ -11,7 +11,7 @@ const fs = require('fs');
 const router = express.Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
 
-// --- Multer setup for logo uploads (legacy support) ---
+// --- Multer setup for logo uploads (kept in case needed for legacy uploads) ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = 'uploads/logos';
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     const servers = await Server.find({ status: 'approved' }).lean();
     const formattedServers = servers.map(s => ({
       ...s,
-      logo: s.logo || null // Already a Discord CDN or media URL
+      logo: s.logo || null // Discord CDN URL already
     }));
     res.json(formattedServers);
   } catch (err) {
@@ -117,20 +117,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (Discord CDN + Media support + tags) ---
+// --- Submit server (updated for Discord CDN logo & tags with query string support) ---
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // --- ALLOW BOTH CDN & MEDIA URLs ---
-    const logoRegex = /^https:\/\/(cdn|media)\.discord(app)?\.net\/attachments\/\d+\/\d+\/.+$/i;
-    if (!data.logo || !logoRegex.test(data.logo)) {
-      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL.' });
+    // Validate Discord CDN URL, allow query strings after extension
+    const logo = data.logo;
+    const logoRegex = /^https:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/.+\.(png|jpg|jpeg|gif)(\?.*)?$/i;
+    if (!logo || !logoRegex.test(logo)) {
+      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL ending in png, jpg, jpeg, or gif.' });
     }
 
     const members = data.members ? Number(data.members) : undefined;
 
-    // Handle tags
+    // Handle tags (max 5)
     let tags = [];
     if (data['tags[]']) {
       tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
@@ -145,7 +146,7 @@ router.post('/', auth, async (req, res) => {
       type: data.type || undefined,
       rules: data.rules || undefined,
       website: data.website || undefined,
-      logo: data.logo, // Discord CDN or media URL
+      logo: logo,
       nsfw: data.nsfw === 'true',
       tags: tags,
       submitter: req.user._id,
