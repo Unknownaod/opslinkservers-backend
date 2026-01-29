@@ -68,35 +68,31 @@ router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // --- Validate that logo is a URL ---
-if (!data.logo || typeof data.logo !== 'string') {
-  return res.status(400).json({ error: 'Server logo is required.' });
-}
+    // --- Validate logo ---
+    if (!data.logo || typeof data.logo !== 'string') {
+      return res.status(400).json({ error: 'Server logo is required.' });
+    }
+    const logo = data.logo.trim();
+    if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(logo)) {
+      return res.status(400).json({ error: 'Logo must be a direct image URL (png, jpg, jpeg, webp, gif, svg).' });
+    }
 
-const logo = data.logo.trim();
-
-if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(logo)) {
-  return res.status(400).json({ error: 'Logo must be a direct image URL (png, jpg, jpeg, webp, gif, svg).' });
-}
-
-
+    // --- Members ---
     const members = data.members ? Number(data.members) : undefined;
 
-    // --- Handle tags (max 5) ---
-let tags = [];
+    // --- Tags ---
+    let tags = [];
+    if (data['tags[]']) {
+      let incoming = data['tags[]'];
+      if (!Array.isArray(incoming)) incoming = [incoming];
+      tags = incoming
+        .map(t => String(t).trim().toLowerCase())
+        .filter(t => t.length >= 2 && t.length <= 24)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 5);
+    }
 
-if (data['tags[]']) {
-  let incoming = data['tags[]'];
-
-  if (!Array.isArray(incoming)) incoming = [incoming];
-
-  tags = incoming
-    .map(t => String(t).trim().toLowerCase())
-    .filter(t => t.length >= 2 && t.length <= 24)
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .slice(0, 5);
-}
-
+    // --- Create server ---
     const server = new Server({
       name: data.name,
       invite: data.invite,
@@ -106,9 +102,10 @@ if (data['tags[]']) {
       type: data.type || undefined,
       rules: data.rules || undefined,
       website: data.website || undefined,
-      logo: data.logo, // ANY image URL now allowed
+      logo: logo,
       nsfw: data.nsfw === 'true',
       tags: tags,
+      discordServerId: data.discordServerId || undefined, // NEW: Discord bot integration
       submitter: req.user._id,
       submitterDiscord: {
         username: req.user.discordUsername,
@@ -151,6 +148,25 @@ router.post('/:id/comments', auth, async (req, res) => {
   } catch (err) {
     console.error('Post comment error:', err);
     res.status(500).json({ error: 'Failed to post comment' });
+  }
+});
+
+// --- Update server members count (by bot) ---
+router.patch('/:id/members', async (req, res) => {
+  try {
+    const { members } = req.body;
+    if (members == null || isNaN(members)) return res.status(400).json({ error: 'Invalid members count.' });
+
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    server.members = Number(members);
+    await server.save();
+
+    res.json({ message: 'Members count updated successfully.', members: server.members });
+  } catch (err) {
+    console.error('Update members error:', err);
+    res.status(500).json({ error: 'Failed to update members.' });
   }
 });
 
@@ -220,5 +236,3 @@ router.post('/:id/report', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
