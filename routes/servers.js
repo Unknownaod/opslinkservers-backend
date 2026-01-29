@@ -84,9 +84,8 @@ router.post('/', auth, async (req, res) => {
 
     // Tags
     let tags = [];
-    if (data['tags[]']) {
-      let incoming = data['tags[]'];
-      if (!Array.isArray(incoming)) incoming = [incoming];
+    if (data.tags) {
+      let incoming = Array.isArray(data.tags) ? data.tags : [data.tags];
       tags = incoming
         .map(t => String(t).trim().toLowerCase())
         .filter(t => t.length >= 2 && t.length <= 24)
@@ -109,7 +108,7 @@ router.post('/', auth, async (req, res) => {
       rules: data.rules || undefined,
       website: data.website || undefined,
       logo: logo,
-      nsfw: data.nsfw === 'true',
+      nsfw: !!data.nsfw,
       tags: tags,
       discordServerId: data.discordServerId,
       submitter: req.user._id,
