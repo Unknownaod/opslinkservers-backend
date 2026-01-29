@@ -117,7 +117,8 @@ router.post('/', auth, async (req, res) => {
         userID: req.user.discordUserID,
         tag: req.user.discordTag
       },
-      status: 'pending'
+      status: 'pending',
+      editRequests: [] // initialize empty array for future edit requests
     });
 
     await server.save();
@@ -130,6 +131,71 @@ router.post('/', auth, async (req, res) => {
   } catch (err) {
     console.error('Submit server error:', err);
     res.status(500).json({ error: 'Submission failed. Please check your input.' });
+  }
+});
+
+// --- Request server edit (by owner) ---
+router.post('/:id/request-edit', auth, async (req, res) => {
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    // Only the owner can request edits
+    if (server.submitter.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'You are not the owner of this server.' });
+    }
+
+    const data = req.body;
+
+    // Validate basic required fields
+    if (!data.name || !data.description || !data.logo) {
+      return res.status(400).json({ error: 'Name, description, and logo are required.' });
+    }
+
+    // Validate logo URL
+    if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(data.logo)) {
+      return res.status(400).json({ error: 'Logo must be a direct image URL.' });
+    }
+
+    // Process tags (up to 5, unique, lowercase)
+    let tags = [];
+    if (data.tags) {
+      let incoming = Array.isArray(data.tags) ? data.tags : [data.tags];
+      tags = incoming
+        .map(t => String(t).trim().toLowerCase())
+        .filter(t => t.length >= 2 && t.length <= 24)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 5);
+    }
+
+    // Save edit request
+    const editRequest = {
+      name: data.name,
+      description: data.description,
+      logo: data.logo,
+      website: data.website || undefined,
+      language: data.language || undefined,
+      members: data.members != null ? Number(data.members) : undefined,
+      type: data.type || undefined,
+      nsfw: !!data.nsfw,
+      tags: tags,
+      requestedAt: new Date(),
+      approved: null // pending
+    };
+
+    if (!server.editRequests) server.editRequests = [];
+    server.editRequests.push(editRequest);
+
+    await server.save();
+
+    await sendDiscordNotification(
+      `Server edit requested for "${server.name}" by ${req.user.discordUsername}.\nRequested changes: ${JSON.stringify(editRequest, null, 2)}`
+    );
+
+    res.status(201).json({ message: 'Edit request submitted! Staff will review it.' });
+  } catch (err) {
+    console.error('Request edit error:', err);
+    res.status(500).json({ error: 'Failed to submit edit request.' });
   }
 });
 
