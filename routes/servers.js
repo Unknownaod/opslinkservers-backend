@@ -9,8 +9,13 @@ const router = express.Router();
 
 // Get all approved servers (public)
 router.get('/', async (req, res) => {
-  const servers = await Server.find({ status: 'approved' });
-  res.json(servers);
+  try {
+    const servers = await Server.find({ status: 'approved' });
+    res.json(servers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch approved servers' });
+  }
 });
 
 // Admin: Get all servers (pending, approved, denied)
@@ -20,20 +25,25 @@ router.get('/all', auth, adminAuth, async (req, res) => {
     res.json(servers);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch servers' });
+    res.status(500).json({ error: 'Failed to fetch all servers' });
   }
 });
 
 // Get single server with comments
 router.get('/:id', async (req, res) => {
-  const server = await Server.findById(req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
 
-  const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 });
-  res.json({
-    ...server.toObject(),
-    comments: comments.map(c => ({ user: c.userDiscord.username, text: c.text }))
-  });
+    const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 });
+    res.json({
+      ...server.toObject(),
+      comments: comments.map(c => ({ user: c.userDiscord.username, text: c.text }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch server' });
+  }
 });
 
 // Submit server (requires login)
@@ -67,18 +77,23 @@ router.post('/', auth, async (req, res) => {
 
 // Post a comment (requires login)
 router.post('/:id/comments', auth, async (req, res) => {
-  const server = await Server.findById(req.params.id);
-  if (!server || server.status !== 'approved') return res.status(404).json({ error: 'Server not found' });
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server || server.status !== 'approved') return res.status(404).json({ error: 'Server not found or not approved' });
 
-  const comment = new Comment({
-    server: server._id,
-    user: req.user._id,
-    userDiscord: { username: req.user.discordUsername, tag: req.user.discordTag },
-    text: req.body.text
-  });
+    const comment = new Comment({
+      server: server._id,
+      user: req.user._id,
+      userDiscord: { username: req.user.discordUsername, tag: req.user.discordTag },
+      text: req.body.text
+    });
 
-  await comment.save();
-  res.status(201).json({ message: 'Comment posted' });
+    await comment.save();
+    res.status(201).json({ message: 'Comment posted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to post comment' });
+  }
 });
 
 // Admin: PATCH update server status (approve/deny/pending)
