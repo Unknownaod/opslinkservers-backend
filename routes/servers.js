@@ -83,10 +83,19 @@ if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(logo)) {
     const members = data.members ? Number(data.members) : undefined;
 
     // --- Handle tags (max 5) ---
-    let tags = [];
-    if (data['tags[]']) {
-      tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
-    }
+let tags = [];
+
+if (data['tags[]']) {
+  let incoming = data['tags[]'];
+
+  if (!Array.isArray(incoming)) incoming = [incoming];
+
+  tags = incoming
+    .map(t => String(t).trim().toLowerCase())
+    .filter(t => t.length >= 2 && t.length <= 24)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 5);
+}
 
     const server = new Server({
       name: data.name,
@@ -211,4 +220,5 @@ router.post('/:id/report', auth, async (req, res) => {
 });
 
 module.exports = router;
+
 
