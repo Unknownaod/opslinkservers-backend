@@ -1,16 +1,43 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const adminAuth = require('../middleware/adminAuth'); // Admin-only middleware
+const adminAuth = require('../middleware/adminAuth');
 const Server = require('../models/Server');
 const Comment = require('../models/Comment');
 const sendDiscordNotification = require('../utils/discordWebhook');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
 
-// Get all approved servers (public)
+// --- Multer setup for logo uploads ---
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = 'uploads/logos';
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // Max 5MB
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.png', '.jpg', '.jpeg', '.gif'].includes(ext)) cb(null, true);
+    else cb(new Error('Only image files are allowed (png, jpg, jpeg, gif).'));
+  }
+});
+
+// --- Public: Get all approved servers ---
 router.get('/', async (req, res) => {
   try {
-    const servers = await Server.find({ status: 'approved' });
+    const servers = await Server.find({ status: 'approved' })
+      .select('name invite description type members logo tags');
     res.json(servers);
   } catch (err) {
     console.error(err);
@@ -18,10 +45,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Admin: Get all servers (pending, approved, denied)
+// --- Admin: Get all servers ---
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
-    const servers = await Server.find({});
+    const servers = await Server.find({})
+      .select('name invite status submitter logo tags');
     res.json(servers);
   } catch (err) {
     console.error(err);
@@ -29,7 +57,7 @@ router.get('/all', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Get single server with comments
+// --- Get single server with comments ---
 router.get('/:id', async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
@@ -46,18 +74,22 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Submit server (requires login)
-router.post('/', auth, async (req, res) => {
-  const data = req.body;
-
-  // Ensure the tags are an array of up to 5 custom tags
-  const tags = data.tags && Array.isArray(data.tags) ? data.tags.slice(0, 5) : [];
-
+// --- Submit server (requires login) ---
+router.post('/', auth, upload.single('logo'), async (req, res) => {
   try {
+    const data = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Server logo is required.' });
+    }
+
+    const tags = data.tags && Array.isArray(data.tags) ? data.tags.slice(0, 5) : [];
+
     const server = new Server({
       ...data,
+      logo: req.file.path, // save logo path
       tags: tags,
-      nsfw: data.nsfw || false,
+      nsfw: data.nsfw === 'true' || false,
       submitter: req.user._id,
       submitterDiscord: {
         username: req.user.discordUsername,
@@ -73,14 +105,14 @@ router.post('/', auth, async (req, res) => {
       `New server submission: **${server.name}** by ${server.submitterDiscord.username}\nInvite: ${server.invite}`
     );
 
-    res.status(201).json({ message: 'Server submitted! Awaiting approval.' });
+    res.status(201).json({ message: 'Server submitted! Awaiting approval.', server });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Submission failed' });
   }
 });
 
-// Post a comment (requires login)
+// --- Post a comment (requires login) ---
 router.post('/:id/comments', auth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
@@ -101,7 +133,7 @@ router.post('/:id/comments', auth, async (req, res) => {
   }
 });
 
-// Admin: PATCH update server status (approve/deny/pending)
+// --- Admin: Update server status ---
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   const { status, rejectionReason } = req.body;
   if (!['approved', 'denied', 'pending'].includes(status)) {
@@ -126,15 +158,13 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Admin: DELETE a server (any status)
+// --- Admin: Delete a server ---
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Delete all related comments first
     await Comment.deleteMany({ server: server._id });
-
     await server.deleteOne();
 
     await sendDiscordNotification(
@@ -148,27 +178,19 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Report a server
+// --- Report a server ---
 router.post('/:id/report', auth, async (req, res) => {
   const { reason } = req.body;
 
-  if (!reason) {
-    return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
-  }
+  if (!reason) return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
 
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Add report to the server
-    server.reports.push({
-      user: req.user._id,
-      reason: reason
-    });
-
+    server.reports.push({ user: req.user._id, reason });
     await server.save();
 
-    // Notify admin (or any preferred notification)
     await sendDiscordNotification(
       `A server "${server.name}" has been reported by ${req.user.discordUsername} with reason: ${reason}.`
     );
