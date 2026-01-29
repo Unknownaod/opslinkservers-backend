@@ -7,7 +7,7 @@ const serverSchema = new mongoose.Schema({
     required: true,
     trim: true,
     minlength: 2,
-    maxlength: 64
+    maxlength: 600
   },
 
   invite: {
@@ -115,3 +115,4 @@ serverSchema.index({ tags: 1 });
 serverSchema.index({ status: 1 });
 
 module.exports = mongoose.model('Server', serverSchema);
+
