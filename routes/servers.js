@@ -11,7 +11,7 @@ const fs = require('fs');
 const router = express.Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
 
-// --- Multer setup for logo uploads ---
+// --- Multer setup for logo uploads (kept in case needed for legacy uploads) ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = 'uploads/logos';
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     const servers = await Server.find({ status: 'approved' }).lean();
     const formattedServers = servers.map(s => ({
       ...s,
-      logo: s.logo ? `${BASE_URL}/${s.logo.replace(/\\/g, '/')}` : null
+      logo: s.logo ? s.logo : null // Already a Discord CDN URL
     }));
     res.json(formattedServers);
   } catch (err) {
@@ -65,7 +65,7 @@ router.get('/all', auth, adminAuth, async (req, res) => {
         language: s.language || null,
         rules: s.rules || null,
         website: s.website || null,
-        logo: s.logo ? `${BASE_URL}/${s.logo.replace(/\\/g, '/')}` : null,
+        logo: s.logo || null,
         nsfw: s.nsfw || false,
         tags: s.tags || [],
         status: s.status || 'pending',
@@ -103,7 +103,7 @@ router.get('/:id', async (req, res) => {
     const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
     res.json({
       ...server,
-      logo: server.logo ? `${BASE_URL}/${server.logo.replace(/\\/g, '/')}` : null,
+      logo: server.logo || null,
       comments: comments.map(c => ({
         user: c.userDiscord.username,
         tag: c.userDiscord.tag,
@@ -117,15 +117,23 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server ---
-router.post('/', auth, upload.single('logo'), async (req, res) => {
+// --- Submit server (updated for Discord CDN logo & tags) ---
+router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
-    if (!req.file) return res.status(400).json({ error: 'Server logo is required.' });
+
+    // Validate Discord CDN URL
+    if (!data.logo || !data.logo.startsWith('https://cdn.discordapp.com/')) {
+      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL.' });
+    }
 
     const members = data.members ? Number(data.members) : undefined;
+
+    // Handle tags
     let tags = [];
-    if (data['tags[]']) tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
+    if (data['tags[]']) {
+      tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
+    }
 
     const server = new Server({
       name: data.name,
@@ -136,7 +144,7 @@ router.post('/', auth, upload.single('logo'), async (req, res) => {
       type: data.type || undefined,
       rules: data.rules || undefined,
       website: data.website || undefined,
-      logo: req.file.path,
+      logo: data.logo, // Discord CDN URL
       nsfw: data.nsfw === 'true',
       tags: tags,
       submitter: req.user._id,
@@ -155,10 +163,7 @@ router.post('/', auth, upload.single('logo'), async (req, res) => {
 
     res.status(201).json({
       message: 'Server submitted! Awaiting approval.',
-      server: {
-        ...server.toObject(),
-        logo: `${BASE_URL}/${server.logo.replace(/\\/g, '/')}`
-      }
+      server
     });
   } catch (err) {
     console.error('Submit server error:', err);
