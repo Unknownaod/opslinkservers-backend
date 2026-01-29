@@ -34,7 +34,15 @@ const serverSchema = new mongoose.Schema({
   members: {
     type: Number,
     min: 0,
-    max: 10_000_000
+    max: 10_000_000,
+    default: 0 // default to 0, can be updated by bot
+  },
+
+  discordServerId: {
+    type: String,
+    trim: true,
+    maxlength: 64, // Discord server IDs are 18+ digits
+    index: true
   },
 
   type: {
@@ -113,6 +121,6 @@ const serverSchema = new mongoose.Schema({
 serverSchema.index({ name: 'text', description: 'text', tags: 'text' });
 serverSchema.index({ tags: 1 });
 serverSchema.index({ status: 1 });
+serverSchema.index({ discordServerId: 1 }); // for fast lookups by bot
 
 module.exports = mongoose.model('Server', serverSchema);
-
