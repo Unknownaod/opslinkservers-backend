@@ -69,11 +69,16 @@ router.post('/', auth, async (req, res) => {
     const data = req.body;
 
     // --- Validate that logo is a URL ---
-    try {
-      new URL(data.logo);
-    } catch {
-      return res.status(400).json({ error: 'Server logo must be a valid URL.' });
-    }
+if (!data.logo || typeof data.logo !== 'string') {
+  return res.status(400).json({ error: 'Server logo is required.' });
+}
+
+const logo = data.logo.trim();
+
+if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(logo)) {
+  return res.status(400).json({ error: 'Logo must be a direct image URL (png, jpg, jpeg, webp, gif, svg).' });
+}
+
 
     const members = data.members ? Number(data.members) : undefined;
 
@@ -206,3 +211,4 @@ router.post('/:id/report', auth, async (req, res) => {
 });
 
 module.exports = router;
+
