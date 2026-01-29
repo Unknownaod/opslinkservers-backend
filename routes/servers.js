@@ -4,45 +4,14 @@ const adminAuth = require('../middleware/adminAuth');
 const Server = require('../models/Server');
 const Comment = require('../models/Comment');
 const sendDiscordNotification = require('../utils/discordWebhook');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
 const router = express.Router();
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
-
-// --- Multer setup for logo uploads (legacy) ---
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = 'uploads/logos';
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (['.png', '.jpg', '.jpeg', '.gif'].includes(ext)) cb(null, true);
-    else cb(new Error('Only image files are allowed (png, jpg, jpeg, gif).'));
-  }
-});
 
 // --- Public: Get all approved servers ---
 router.get('/', async (req, res) => {
   try {
     const servers = await Server.find({ status: 'approved' }).lean();
-    const formattedServers = servers.map(s => ({
-      ...s,
-      logo: s.logo || null
-    }));
-    res.json(formattedServers);
+    res.json(servers.map(s => ({ ...s, logo: s.logo || null })));
   } catch (err) {
     console.error('Fetch approved servers error:', err);
     res.status(500).json({ error: 'Failed to fetch approved servers' });
@@ -56,29 +25,7 @@ router.get('/all', auth, adminAuth, async (req, res) => {
     const fullServers = await Promise.all(servers.map(async s => {
       const comments = await Comment.find({ server: s._id }).sort({ createdAt: -1 }).lean();
       return {
-        _id: s._id,
-        name: s.name,
-        invite: s.invite,
-        description: s.description,
-        type: s.type || null,
-        members: s.members || null,
-        language: s.language || null,
-        rules: s.rules || null,
-        website: s.website || null,
-        logo: s.logo || null,
-        nsfw: s.nsfw || false,
-        tags: s.tags || [],
-        status: s.status || 'pending',
-        rejectionReason: s.rejectionReason || null,
-        submitter: s.submitter || null,
-        submitterDiscord: s.submitterDiscord || null,
-        createdAt: s.createdAt || null,
-        updatedAt: s.updatedAt || null,
-        reports: (s.reports || []).map(r => ({
-          user: r.user || null,
-          reason: r.reason || null,
-          createdAt: r.createdAt || null
-        })),
+        ...s,
         comments: comments.map(c => ({
           user: c.userDiscord.username,
           tag: c.userDiscord.tag,
@@ -103,7 +50,6 @@ router.get('/:id', async (req, res) => {
     const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
     res.json({
       ...server,
-      logo: server.logo || null,
       comments: comments.map(c => ({
         user: c.userDiscord.username,
         tag: c.userDiscord.tag,
@@ -117,21 +63,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (allow any Discord CDN media) ---
+// --- Submit server (any image URL allowed) ---
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validate Discord CDN media URL (any file, query string allowed)
-    const logo = data.logo;
-    const logoRegex = /^https:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/.+$/i;
-    if (!logo || !logoRegex.test(logo)) {
-      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL.' });
+    // --- Validate that logo is a URL ---
+    try {
+      new URL(data.logo);
+    } catch {
+      return res.status(400).json({ error: 'Server logo must be a valid URL.' });
     }
 
     const members = data.members ? Number(data.members) : undefined;
 
-    // Handle tags (max 5)
+    // --- Handle tags (max 5) ---
     let tags = [];
     if (data['tags[]']) {
       tags = Array.isArray(data['tags[]']) ? data['tags[]'].slice(0, 5) : [data['tags[]']];
@@ -146,7 +92,7 @@ router.post('/', auth, async (req, res) => {
       type: data.type || undefined,
       rules: data.rules || undefined,
       website: data.website || undefined,
-      logo: logo,
+      logo: data.logo, // ANY image URL now allowed
       nsfw: data.nsfw === 'true',
       tags: tags,
       submitter: req.user._id,
