@@ -11,7 +11,7 @@ const fs = require('fs');
 const router = express.Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'; // Base URL for serving logos
 
-// --- Multer setup for logo uploads (kept in case needed for legacy uploads) ---
+// --- Multer setup for logo uploads (legacy) ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = 'uploads/logos';
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
     const servers = await Server.find({ status: 'approved' }).lean();
     const formattedServers = servers.map(s => ({
       ...s,
-      logo: s.logo || null // Discord CDN URL already
+      logo: s.logo || null
     }));
     res.json(formattedServers);
   } catch (err) {
@@ -49,7 +49,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// --- Admin: Get all servers with full info ---
+// --- Admin: Get all servers ---
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
     const servers = await Server.find({}).lean();
@@ -117,16 +117,16 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server (updated for Discord CDN logo & tags with query string support) ---
+// --- Submit server (allow any Discord CDN media) ---
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validate Discord CDN URL, allow query strings after extension
+    // Validate Discord CDN media URL (any file, query string allowed)
     const logo = data.logo;
-    const logoRegex = /^https:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/.+\.(png|jpg|jpeg|gif)(\?.*)?$/i;
+    const logoRegex = /^https:\/\/cdn\.discordapp\.com\/attachments\/\d+\/\d+\/.+$/i;
     if (!logo || !logoRegex.test(logo)) {
-      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL ending in png, jpg, jpeg, or gif.' });
+      return res.status(400).json({ error: 'Server logo must be a valid Discord CDN URL.' });
     }
 
     const members = data.members ? Number(data.members) : undefined;
