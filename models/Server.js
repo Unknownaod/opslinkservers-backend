@@ -32,8 +32,22 @@ const editRequestSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
-}); // ⬅️ KEEP _id ENABLED
+}, { _id: true });
 
+// Pre-save hook: remove undefined or empty string fields from changes
+editRequestSchema.pre('save', function(next) {
+  if (this.changes) {
+    const allowedFields = ['description','logo','website','language','members','type','nsfw','tags'];
+    const filtered = {};
+    allowedFields.forEach(f => {
+      if (this.changes[f] !== undefined && this.changes[f] !== '') {
+        filtered[f] = this.changes[f];
+      }
+    });
+    this.changes = filtered;
+  }
+  next();
+});
 
 // ================================
 // SERVER SCHEMA
@@ -92,6 +106,9 @@ const serverSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+// ================================
+// INDEXES
+// ================================
 serverSchema.index({ name: 'text', description: 'text', tags: 'text' });
 serverSchema.index({ status: 1 });
 serverSchema.index({ discordServerId: 1 });
