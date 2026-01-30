@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 const Server = require('../models/Server');
@@ -8,10 +9,10 @@ const sendDiscordNotification = require('../utils/discordWebhook');
 const router = express.Router();
 
 // ========================================================
-// PUBLIC ROUTES
+// PUBLIC ROUTES (STATIC FIRST)
 // ========================================================
 
-// Get all approved servers
+// Get all approved servers (public)
 router.get('/', async (req, res) => {
   try {
     const servers = await Server.find({ status: 'approved' }).lean();
@@ -22,28 +23,18 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single server + comments
-router.get('/:id', async (req, res) => {
+// ========================================================
+// ADMIN ROUTES (STATIC)
+// ========================================================
+
+// Get ALL servers (admin)
+router.get('/all', auth, adminAuth, async (req, res) => {
   try {
-    const server = await Server.findById(req.params.id).lean();
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
-    const comments = await Comment.find({ server: server._id })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    res.json({
-      ...server,
-      comments: comments.map(c => ({
-        user: c.userDiscord.username,
-        tag: c.userDiscord.tag,
-        text: c.text,
-        createdAt: c.createdAt
-      }))
-    });
+    const servers = await Server.find({}).lean();
+    res.json(servers);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch server' });
+    res.status(500).json({ error: 'Failed to fetch servers' });
   }
 });
 
@@ -112,11 +103,47 @@ Discord ID: ${server.discordServerId}`
 });
 
 // ========================================================
-// EDIT REQUEST SYSTEM (FIXED)
+// PARAM ROUTES (SPECIFIC → GENERIC)
 // ========================================================
 
-// Request edit (owner only)
+// Update server status (admin)
+router.patch('/:id/status', auth, adminAuth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
+  const { status, rejectionReason } = req.body;
+
+  if (!['approved', 'denied', 'pending'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    server.status = status;
+    server.rejectionReason = status === 'denied' ? rejectionReason : undefined;
+    await server.save();
+
+    await sendDiscordNotification(
+      `🛠 Server **${server.name}** status: ${status.toUpperCase()}`
+    );
+
+    res.json({ message: 'Status updated.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Status update failed.' });
+  }
+});
+
+// Request edit (owner)
 router.post('/:id/request-edit', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -163,58 +190,14 @@ By: ${req.user.discordUsername}`
   }
 });
 
-// ========================================================
-// ADMIN ROUTES
-// ========================================================
-
-// Get all servers (admin)
-router.get('/all', auth, adminAuth, async (req, res) => {
-  try {
-    const servers = await Server.find({}).lean();
-    res.json(servers);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch servers' });
-  }
-});
-
-// Approve / deny server
-router.patch('/:id/status', auth, adminAuth, async (req, res) => {
-  const { status, rejectionReason } = req.body;
-
-  if (!['approved', 'denied', 'pending'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
-
-  try {
-    const server = await Server.findById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
-    server.status = status;
-    server.rejectionReason = status === 'denied' ? rejectionReason : undefined;
-
-    await server.save();
-
-    await sendDiscordNotification(
-      `🛠 Server **${server.name}** status: ${status.toUpperCase()}`
-    );
-
-    res.json({ message: 'Status updated.' });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Status update failed.' });
-  }
-});
-
-// ========================================================
-// EDIT APPROVAL (ADMIN)
-// ========================================================
-
+// Approve edit (admin)
 router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   try {
     const { editId } = req.body;
-
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
@@ -223,7 +206,6 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
 
     Object.assign(server, edit.changes);
     edit.deleteOne();
-
     await server.save();
 
     await sendDiscordNotification(`✅ Edit approved for **${server.name}**`);
@@ -235,10 +217,14 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
   }
 });
 
+// Deny edit (admin)
 router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   try {
     const { editId } = req.body;
-
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
@@ -257,11 +243,12 @@ router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
   }
 });
 
-// ========================================================
-// COMMENTS
-// ========================================================
-
+// Post comment
 router.post('/:id/comments', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   try {
     const server = await Server.findById(req.params.id);
     if (!server || server.status !== 'approved') {
@@ -287,11 +274,12 @@ router.post('/:id/comments', auth, async (req, res) => {
   }
 });
 
-// ========================================================
-// REPORT SERVER
-// ========================================================
-
+// Report server
 router.post('/:id/report', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   if (!req.body.reason) {
     return res.status(400).json({ error: 'Reason required' });
   }
@@ -321,10 +309,7 @@ By: ${req.user.discordUsername}`
   }
 });
 
-// ========================================================
-// MEMBER COUNT BOT UPDATE
-// ========================================================
-
+// Update member count (bot)
 router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
     if (isNaN(req.body.members)) {
@@ -348,11 +333,12 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
   }
 });
 
-// ========================================================
-// DELETE SERVER (ADMIN)
-// ========================================================
-
+// Delete server (admin)
 router.delete('/:id', auth, adminAuth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -366,6 +352,40 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Delete failed.' });
+  }
+});
+
+// ========================================================
+// GENERIC — MUST BE LAST
+// ========================================================
+
+// Get single server + comments
+router.get('/:id', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
+
+  try {
+    const server = await Server.findById(req.params.id).lean();
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    const comments = await Comment.find({ server: server._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      ...server,
+      comments: comments.map(c => ({
+        user: c.userDiscord.username,
+        tag: c.userDiscord.tag,
+        text: c.text,
+        createdAt: c.createdAt
+      }))
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch server' });
   }
 });
 
