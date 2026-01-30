@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+// ================================
+// EDIT REQUEST SCHEMA (FIXED)
+// ================================
 const editRequestSchema = new mongoose.Schema({
   requestedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -8,17 +11,14 @@ const editRequestSchema = new mongoose.Schema({
   },
 
   changes: {
-    name: String,
-    invite: String,
     description: String,
+    logo: String,
+    website: String,
     language: String,
     members: Number,
     type: String,
-    rules: String,
-    website: String,
     nsfw: Boolean,
-    tags: [String],
-    logo: String
+    tags: [String]
   },
 
   status: {
@@ -28,103 +28,39 @@ const editRequestSchema = new mongoose.Schema({
     index: true
   },
 
-  rejectionReason: {
-    type: String,
-    maxlength: 512
-  },
-
   createdAt: {
     type: Date,
     default: Date.now
   }
+}); // ⬅️ KEEP _id ENABLED
 
-}, { _id: false });
 
-
+// ================================
+// SERVER SCHEMA
+// ================================
 const serverSchema = new mongoose.Schema({
 
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-    minlength: 2,
-    maxlength: 600
-  },
-
-  invite: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 255
-  },
-
-  description: {
-    type: String,
-    required: true,
-    trim: true,
-    minlength: 10,
-    maxlength: 1024
-  },
-
-  language: {
-    type: String,
-    trim: true,
-    maxlength: 32
-  },
-
-  members: {
-    type: Number,
-    min: 0,
-    max: 10_000_000,
-    default: 0
-  },
-
-  discordServerId: {
-    type: String,
-    trim: true,
-    maxlength: 64,
-    index: true
-  },
-
-  type: {
-    type: String,
-    trim: true,
-    maxlength: 32
-  },
-
-  rules: {
-    type: String,
-    trim: true,
-    maxlength: 4096
-  },
-
-  website: {
-    type: String,
-    trim: true,
-    maxlength: 255
-  },
-
-  nsfw: {
-    type: Boolean,
-    default: false
-  },
+  name: { type: String, required: true, trim: true, minlength: 2, maxlength: 600 },
+  invite: { type: String, required: true, trim: true, maxlength: 255 },
+  description: { type: String, required: true, trim: true, minlength: 10, maxlength: 1024 },
+  language: { type: String, trim: true, maxlength: 32 },
+  members: { type: Number, min: 0, max: 10_000_000, default: 0 },
+  discordServerId: { type: String, trim: true, maxlength: 64, index: true },
+  type: { type: String, trim: true, maxlength: 32 },
+  rules: { type: String, trim: true, maxlength: 4096 },
+  website: { type: String, trim: true, maxlength: 255 },
+  nsfw: { type: Boolean, default: false },
 
   tags: {
     type: [String],
     default: [],
     validate: {
-      validator: function(arr) {
-        return arr.length <= 5;
-      },
+      validator: arr => arr.length <= 5,
       message: 'You may only have up to 5 tags.'
     }
   },
 
-  logo: {
-    type: String,
-    required: true,
-    trim: true
-  },
+  logo: { type: String, required: true, trim: true },
 
   status: {
     type: String,
@@ -133,21 +69,14 @@ const serverSchema = new mongoose.Schema({
     index: true
   },
 
-  rejectionReason: {
-    type: String,
-    maxlength: 512
-  },
+  rejectionReason: { type: String, maxlength: 512 },
 
-  submitter: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    index: true
-  },
+  submitter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
 
   submitterDiscord: {
-    username: { type: String, trim: true },
-    userID: { type: String, trim: true },
-    tag: { type: String, trim: true }
+    username: String,
+    userID: String,
+    tag: String
   },
 
   reports: [{
@@ -156,10 +85,6 @@ const serverSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
   }],
 
-  // ================================
-  // SERVER EDIT REQUEST SYSTEM
-  // ================================
-
   editRequests: {
     type: [editRequestSchema],
     default: []
@@ -167,10 +92,7 @@ const serverSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-
-// ---------- Indexes for performance ----------
 serverSchema.index({ name: 'text', description: 'text', tags: 'text' });
-serverSchema.index({ tags: 1 });
 serverSchema.index({ status: 1 });
 serverSchema.index({ discordServerId: 1 });
 serverSchema.index({ 'editRequests.status': 1 });
