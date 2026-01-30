@@ -168,29 +168,21 @@ router.post('/:id/request-edit', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not server owner' });
     }
 
-    // Clean and prepare changes
-    const changes = {};
+    const changes = req.body.changes || {};
 
-    if (req.body.description) changes.description = req.body.description;
-    if (req.body.logo) changes.logo = req.body.logo;
-    if (req.body.website) changes.website = req.body.website;
-    if (req.body.language) changes.language = req.body.language;
-    if (req.body.members !== undefined) changes.members = Number(req.body.members);
-    if (req.body.type) changes.type = req.body.type;
-    if (req.body.nsfw !== undefined) changes.nsfw = !!req.body.nsfw;
+    if (!Object.keys(changes).length) {
+      return res.status(400).json({ error: 'No changes submitted.' });
+    }
 
-    // Tags
-    let tags = [];
-    if (req.body.tags) {
-      tags = [...new Set(
-        (Array.isArray(req.body.tags) ? req.body.tags : [req.body.tags])
+    // sanitize tags
+    if (changes.tags) {
+      changes.tags = [...new Set(
+        (Array.isArray(changes.tags) ? changes.tags : [changes.tags])
           .map(t => t.toLowerCase().trim())
           .filter(t => t.length >= 2 && t.length <= 24)
       )].slice(0, 5);
     }
-    changes.tags = tags;
 
-    // Push to editRequests
     server.editRequests.push({
       requestedBy: req.user._id,
       changes
@@ -411,5 +403,6 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
 
 
