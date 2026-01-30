@@ -102,6 +102,22 @@ Discord ID: ${server.discordServerId}`
   }
 });
 
+// ===========================================
+// GET ALL SERVERS
+// ============================================
+
+// Get all servers submitted by the logged-in user (any status)
+router.get('/mine', auth, async (req, res) => {
+  try {
+    const servers = await Server.find({ submitter: req.user._id }).lean();
+    res.json(servers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch your servers' });
+  }
+});
+
+
 // ========================================================
 // PARAM ROUTES (SPECIFIC → GENERIC)
 // ========================================================
@@ -390,3 +406,4 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
