@@ -168,6 +168,18 @@ router.post('/:id/request-edit', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not server owner' });
     }
 
+    // Clean and prepare changes
+    const changes = {};
+
+    if (req.body.description) changes.description = req.body.description;
+    if (req.body.logo) changes.logo = req.body.logo;
+    if (req.body.website) changes.website = req.body.website;
+    if (req.body.language) changes.language = req.body.language;
+    if (req.body.members !== undefined) changes.members = Number(req.body.members);
+    if (req.body.type) changes.type = req.body.type;
+    if (req.body.nsfw !== undefined) changes.nsfw = !!req.body.nsfw;
+
+    // Tags
     let tags = [];
     if (req.body.tags) {
       tags = [...new Set(
@@ -176,26 +188,18 @@ router.post('/:id/request-edit', auth, async (req, res) => {
           .filter(t => t.length >= 2 && t.length <= 24)
       )].slice(0, 5);
     }
+    changes.tags = tags;
 
+    // Push to editRequests
     server.editRequests.push({
       requestedBy: req.user._id,
-      changes: {
-        description: req.body.description,
-        logo: req.body.logo,
-        website: req.body.website,
-        language: req.body.language,
-        members: req.body.members,
-        type: req.body.type,
-        nsfw: !!req.body.nsfw,
-        tags
-      }
+      changes
     });
 
     await server.save();
 
     await sendDiscordNotification(
-      `✏️ Edit request for **${server.name}**
-By: ${req.user.discordUsername}`
+      `✏️ Edit request for **${server.name}**\nBy: ${req.user.discordUsername}`
     );
 
     res.json({ message: 'Edit request submitted.' });
@@ -205,6 +209,7 @@ By: ${req.user.discordUsername}`
     res.status(500).json({ error: 'Edit request failed.' });
   }
 });
+
 
 // Approve edit (admin)
 router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
@@ -406,4 +411,5 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
 
