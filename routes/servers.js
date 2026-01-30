@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
     const servers = await Server.find({ status: 'approved' }).lean();
     res.json(servers);
   } catch (err) {
-    console.error('Fetch servers error:', err);
+    console.error(err);
     res.status(500).json({ error: 'Failed to fetch servers' });
   }
 });
@@ -42,7 +42,7 @@ router.get('/:id', async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error('Fetch server error:', err);
+    console.error(err);
     res.status(500).json({ error: 'Failed to fetch server' });
   }
 });
@@ -63,13 +63,11 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ error: 'Discord server ID required.' });
     }
 
-    const members = data.members ? Number(data.members) : undefined;
-
     let tags = [];
     if (data.tags) {
       tags = [...new Set(
         (Array.isArray(data.tags) ? data.tags : [data.tags])
-          .map(t => String(t).trim().toLowerCase())
+          .map(t => t.toLowerCase().trim())
           .filter(t => t.length >= 2 && t.length <= 24)
       )].slice(0, 5);
     }
@@ -79,7 +77,7 @@ router.post('/', auth, async (req, res) => {
       invite: data.invite,
       description: data.description,
       language: data.language,
-      members,
+      members: Number(data.members) || 0,
       type: data.type,
       rules: data.rules,
       website: data.website,
@@ -93,8 +91,7 @@ router.post('/', auth, async (req, res) => {
         userID: req.user.discordUserID,
         tag: req.user.discordTag
       },
-      status: 'pending',
-      editRequests: []
+      status: 'pending'
     });
 
     await server.save();
@@ -109,13 +106,13 @@ Discord ID: ${server.discordServerId}`
     res.status(201).json({ message: 'Server submitted successfully.' });
 
   } catch (err) {
-    console.error('Submit error:', err);
+    console.error(err);
     res.status(500).json({ error: 'Submission failed.' });
   }
 });
 
 // ========================================================
-// EDIT REQUEST SYSTEM
+// EDIT REQUEST SYSTEM (FIXED)
 // ========================================================
 
 // Request edit (owner only)
@@ -128,49 +125,41 @@ router.post('/:id/request-edit', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not server owner' });
     }
 
-    const data = req.body;
-
-    if (!data.description || !data.logo) {
-      return res.status(400).json({ error: 'Description and logo required.' });
-    }
-
-    if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(data.logo)) {
-      return res.status(400).json({ error: 'Invalid logo URL.' });
-    }
-
     let tags = [];
-    if (data.tags) {
+    if (req.body.tags) {
       tags = [...new Set(
-        (Array.isArray(data.tags) ? data.tags : [data.tags])
-          .map(t => String(t).trim().toLowerCase())
+        (Array.isArray(req.body.tags) ? req.body.tags : [req.body.tags])
+          .map(t => t.toLowerCase().trim())
           .filter(t => t.length >= 2 && t.length <= 24)
       )].slice(0, 5);
     }
 
     server.editRequests.push({
-      description: data.description,
-      logo: data.logo,
-      website: data.website,
-      language: data.language,
-      members: data.members,
-      type: data.type,
-      nsfw: !!data.nsfw,
-      tags,
-      requestedAt: new Date()
+      requestedBy: req.user._id,
+      changes: {
+        description: req.body.description,
+        logo: req.body.logo,
+        website: req.body.website,
+        language: req.body.language,
+        members: req.body.members,
+        type: req.body.type,
+        nsfw: !!req.body.nsfw,
+        tags
+      }
     });
 
     await server.save();
 
     await sendDiscordNotification(
       `✏️ Edit request for **${server.name}**
-Requested by: ${req.user.discordUsername}`
+By: ${req.user.discordUsername}`
     );
 
     res.json({ message: 'Edit request submitted.' });
 
   } catch (err) {
-    console.error('Edit request error:', err);
-    res.status(500).json({ error: 'Failed to submit edit request.' });
+    console.error(err);
+    res.status(500).json({ error: 'Edit request failed.' });
   }
 });
 
@@ -192,6 +181,7 @@ router.get('/all', auth, adminAuth, async (req, res) => {
 // Approve / deny server
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   const { status, rejectionReason } = req.body;
+
   if (!['approved', 'denied', 'pending'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
@@ -202,6 +192,7 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
 
     server.status = status;
     server.rejectionReason = status === 'denied' ? rejectionReason : undefined;
+
     await server.save();
 
     await sendDiscordNotification(
@@ -216,7 +207,10 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Approve edit
+// ========================================================
+// EDIT APPROVAL (ADMIN)
+// ========================================================
+
 router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
   try {
     const { editId } = req.body;
@@ -227,22 +221,12 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
     const edit = server.editRequests.id(editId);
     if (!edit) return res.status(404).json({ error: 'Edit request not found' });
 
-    Object.assign(server, {
-      description: edit.description,
-      logo: edit.logo,
-      website: edit.website,
-      language: edit.language,
-      members: edit.members,
-      type: edit.type,
-      nsfw: edit.nsfw,
-      tags: edit.tags
-    });
-
+    Object.assign(server, edit.changes);
     edit.deleteOne();
+
     await server.save();
 
     await sendDiscordNotification(`✅ Edit approved for **${server.name}**`);
-
     res.json({ message: 'Edit approved.' });
 
   } catch (err) {
@@ -251,7 +235,6 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
   }
 });
 
-// Deny edit
 router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
   try {
     const { editId } = req.body;
@@ -266,7 +249,6 @@ router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
     await server.save();
 
     await sendDiscordNotification(`❌ Edit denied for **${server.name}**`);
-
     res.json({ message: 'Edit denied.' });
 
   } catch (err) {
@@ -306,12 +288,13 @@ router.post('/:id/comments', auth, async (req, res) => {
 });
 
 // ========================================================
-// REPORTS
+// REPORT SERVER
 // ========================================================
 
 router.post('/:id/report', auth, async (req, res) => {
-  const { reason } = req.body;
-  if (!reason) return res.status(400).json({ error: 'Reason required' });
+  if (!req.body.reason) {
+    return res.status(400).json({ error: 'Reason required' });
+  }
 
   try {
     const server = await Server.findById(req.params.id);
@@ -319,14 +302,14 @@ router.post('/:id/report', auth, async (req, res) => {
 
     server.reports.push({
       user: req.user._id,
-      reason
+      reason: req.body.reason
     });
 
     await server.save();
 
     await sendDiscordNotification(
       `🚨 Server reported: **${server.name}**
-Reason: ${reason}
+Reason: ${req.body.reason}
 By: ${req.user.discordUsername}`
     );
 
@@ -344,15 +327,17 @@ By: ${req.user.discordUsername}`
 
 router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
-    const { members } = req.body;
-    if (members == null || isNaN(members)) {
+    if (isNaN(req.body.members)) {
       return res.status(400).json({ error: 'Invalid members count.' });
     }
 
-    const server = await Server.findOne({ discordServerId: req.params.discordServerId });
+    const server = await Server.findOne({
+      discordServerId: req.params.discordServerId
+    });
+
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    server.members = Number(members);
+    server.members = Number(req.body.members);
     await server.save();
 
     res.json({ message: 'Members updated.', members: server.members });
@@ -364,7 +349,7 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
 });
 
 // ========================================================
-// DELETE SERVER
+// DELETE SERVER (ADMIN)
 // ========================================================
 
 router.delete('/:id', auth, adminAuth, async (req, res) => {
@@ -376,7 +361,6 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     await server.deleteOne();
 
     await sendDiscordNotification(`🗑 Server deleted: **${server.name}**`);
-
     res.json({ message: 'Server deleted.' });
 
   } catch (err) {
