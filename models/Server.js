@@ -1,5 +1,46 @@
 const mongoose = require('mongoose');
 
+const editRequestSchema = new mongoose.Schema({
+  requestedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+
+  changes: {
+    name: String,
+    invite: String,
+    description: String,
+    language: String,
+    members: Number,
+    type: String,
+    rules: String,
+    website: String,
+    nsfw: Boolean,
+    tags: [String],
+    logo: String
+  },
+
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'denied'],
+    default: 'pending',
+    index: true
+  },
+
+  rejectionReason: {
+    type: String,
+    maxlength: 512
+  },
+
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+
+}, { _id: false });
+
+
 const serverSchema = new mongoose.Schema({
 
   name: {
@@ -35,13 +76,13 @@ const serverSchema = new mongoose.Schema({
     type: Number,
     min: 0,
     max: 10_000_000,
-    default: 0 // default to 0, can be updated by bot
+    default: 0
   },
 
   discordServerId: {
     type: String,
     trim: true,
-    maxlength: 64, // Discord server IDs are 18+ digits
+    maxlength: 64,
     index: true
   },
 
@@ -87,7 +128,7 @@ const serverSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ['pending', 'approved', 'denied'],
+    enum: ['pending', 'approved', 'denied', 'taken-down'],
     default: 'pending',
     index: true
   },
@@ -113,14 +154,25 @@ const serverSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     reason: { type: String, required: true, maxlength: 1024 },
     createdAt: { type: Date, default: Date.now }
-  }]
+  }],
+
+  // ================================
+  // SERVER EDIT REQUEST SYSTEM
+  // ================================
+
+  editRequests: {
+    type: [editRequestSchema],
+    default: []
+  }
 
 }, { timestamps: true });
+
 
 // ---------- Indexes for performance ----------
 serverSchema.index({ name: 'text', description: 'text', tags: 'text' });
 serverSchema.index({ tags: 1 });
 serverSchema.index({ status: 1 });
-serverSchema.index({ discordServerId: 1 }); // for fast lookups by bot
+serverSchema.index({ discordServerId: 1 });
+serverSchema.index({ 'editRequests.status': 1 });
 
 module.exports = mongoose.model('Server', serverSchema);
