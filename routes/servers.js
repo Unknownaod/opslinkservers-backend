@@ -7,49 +7,31 @@ const sendDiscordNotification = require('../utils/discordWebhook');
 
 const router = express.Router();
 
-// --- Public: Get all approved servers ---
+// ========================================================
+// PUBLIC ROUTES
+// ========================================================
+
+// Get all approved servers
 router.get('/', async (req, res) => {
   try {
     const servers = await Server.find({ status: 'approved' }).lean();
-    res.json(servers.map(s => ({ ...s, logo: s.logo || null })));
+    res.json(servers);
   } catch (err) {
-    console.error('Fetch approved servers error:', err);
-    res.status(500).json({ error: 'Failed to fetch approved servers' });
+    console.error('Fetch servers error:', err);
+    res.status(500).json({ error: 'Failed to fetch servers' });
   }
 });
 
-// --- Admin: Get all servers ---
-router.get('/all', auth, adminAuth, async (req, res) => {
-  try {
-    const servers = await Server.find({}).lean();
-    const fullServers = await Promise.all(
-      servers.map(async s => {
-        const comments = await Comment.find({ server: s._id }).sort({ createdAt: -1 }).lean();
-        return {
-          ...s,
-          comments: comments.map(c => ({
-            user: c.userDiscord.username,
-            tag: c.userDiscord.tag,
-            text: c.text,
-            createdAt: c.createdAt
-          }))
-        };
-      })
-    );
-    res.json(fullServers);
-  } catch (err) {
-    console.error('Fetch all servers error:', err);
-    res.status(500).json({ error: 'Failed to fetch all servers' });
-  }
-});
-
-// --- Get single server with comments ---
+// Get single server + comments
 router.get('/:id', async (req, res) => {
   try {
     const server = await Server.findById(req.params.id).lean();
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
+    const comments = await Comment.find({ server: server._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
     res.json({
       ...server,
       comments: comments.map(c => ({
@@ -65,51 +47,45 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- Submit server ---
+// ========================================================
+// SERVER SUBMISSION
+// ========================================================
+
 router.post('/', auth, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validate logo
-    if (!data.logo || typeof data.logo !== 'string') {
-      return res.status(400).json({ error: 'Server logo is required.' });
-    }
-    const logo = data.logo.trim();
-    if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(logo)) {
-      return res.status(400).json({ error: 'Logo must be a direct image URL (png, jpg, jpeg, webp, gif, svg).' });
+    if (!data.logo || !/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(data.logo)) {
+      return res.status(400).json({ error: 'Valid logo image URL required.' });
     }
 
-    // Members
+    if (!data.discordServerId) {
+      return res.status(400).json({ error: 'Discord server ID required.' });
+    }
+
     const members = data.members ? Number(data.members) : undefined;
 
-    // Tags
     let tags = [];
     if (data.tags) {
-      let incoming = Array.isArray(data.tags) ? data.tags : [data.tags];
-      tags = incoming
-        .map(t => String(t).trim().toLowerCase())
-        .filter(t => t.length >= 2 && t.length <= 24)
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .slice(0, 5);
-    }
-
-    // Require Discord bot integration
-    if (!data.discordServerId) {
-      return res.status(400).json({ error: 'You must provide your Discord server ID for bot integration.' });
+      tags = [...new Set(
+        (Array.isArray(data.tags) ? data.tags : [data.tags])
+          .map(t => String(t).trim().toLowerCase())
+          .filter(t => t.length >= 2 && t.length <= 24)
+      )].slice(0, 5);
     }
 
     const server = new Server({
       name: data.name,
       invite: data.invite,
       description: data.description,
-      language: data.language || undefined,
-      members: members,
-      type: data.type || undefined,
-      rules: data.rules || undefined,
-      website: data.website || undefined,
-      logo: logo,
+      language: data.language,
+      members,
+      type: data.type,
+      rules: data.rules,
+      website: data.website,
+      logo: data.logo,
       nsfw: !!data.nsfw,
-      tags: tags,
+      tags,
       discordServerId: data.discordServerId,
       submitter: req.user._id,
       submitterDiscord: {
@@ -118,113 +94,260 @@ router.post('/', auth, async (req, res) => {
         tag: req.user.discordTag
       },
       status: 'pending',
-      editRequests: [] // initialize empty array for future edit requests
+      editRequests: []
     });
 
     await server.save();
 
     await sendDiscordNotification(
-      `New server submission: **${server.name}** by ${server.submitterDiscord.username}\nInvite: ${server.invite}\nDiscord Server ID: ${server.discordServerId}`
+      `🆕 New server submitted: **${server.name}**
+Owner: ${req.user.discordUsername}
+Invite: ${server.invite}
+Discord ID: ${server.discordServerId}`
     );
 
-    res.status(201).json({ message: 'Server submitted! Awaiting approval.', server });
+    res.status(201).json({ message: 'Server submitted successfully.' });
+
   } catch (err) {
-    console.error('Submit server error:', err);
-    res.status(500).json({ error: 'Submission failed. Please check your input.' });
+    console.error('Submit error:', err);
+    res.status(500).json({ error: 'Submission failed.' });
   }
 });
 
-// --- Request server edit (by owner) ---
+// ========================================================
+// EDIT REQUEST SYSTEM
+// ========================================================
+
+// Request edit (owner only)
 router.post('/:id/request-edit', auth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Only the owner can request edits
     if (server.submitter.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'You are not the owner of this server.' });
+      return res.status(403).json({ error: 'Not server owner' });
     }
 
     const data = req.body;
 
-    // Validate basic required fields
-    if (!data.name || !data.description || !data.logo) {
-      return res.status(400).json({ error: 'Name, description, and logo are required.' });
+    if (!data.description || !data.logo) {
+      return res.status(400).json({ error: 'Description and logo required.' });
     }
 
-    // Validate logo URL
     if (!/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(data.logo)) {
-      return res.status(400).json({ error: 'Logo must be a direct image URL.' });
+      return res.status(400).json({ error: 'Invalid logo URL.' });
     }
 
-    // Process tags (up to 5, unique, lowercase)
     let tags = [];
     if (data.tags) {
-      let incoming = Array.isArray(data.tags) ? data.tags : [data.tags];
-      tags = incoming
-        .map(t => String(t).trim().toLowerCase())
-        .filter(t => t.length >= 2 && t.length <= 24)
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .slice(0, 5);
+      tags = [...new Set(
+        (Array.isArray(data.tags) ? data.tags : [data.tags])
+          .map(t => String(t).trim().toLowerCase())
+          .filter(t => t.length >= 2 && t.length <= 24)
+      )].slice(0, 5);
     }
 
-    // Save edit request
-    const editRequest = {
-      name: data.name,
+    server.editRequests.push({
       description: data.description,
       logo: data.logo,
-      website: data.website || undefined,
-      language: data.language || undefined,
-      members: data.members != null ? Number(data.members) : undefined,
-      type: data.type || undefined,
+      website: data.website,
+      language: data.language,
+      members: data.members,
+      type: data.type,
       nsfw: !!data.nsfw,
-      tags: tags,
-      requestedAt: new Date(),
-      approved: null // pending
-    };
-
-    if (!server.editRequests) server.editRequests = [];
-    server.editRequests.push(editRequest);
+      tags,
+      requestedAt: new Date()
+    });
 
     await server.save();
 
     await sendDiscordNotification(
-      `Server edit requested for "${server.name}" by ${req.user.discordUsername}.\nRequested changes: ${JSON.stringify(editRequest, null, 2)}`
+      `✏️ Edit request for **${server.name}**
+Requested by: ${req.user.discordUsername}`
     );
 
-    res.status(201).json({ message: 'Edit request submitted! Staff will review it.' });
+    res.json({ message: 'Edit request submitted.' });
+
   } catch (err) {
-    console.error('Request edit error:', err);
+    console.error('Edit request error:', err);
     res.status(500).json({ error: 'Failed to submit edit request.' });
   }
 });
 
-// --- Post comment ---
+// ========================================================
+// ADMIN ROUTES
+// ========================================================
+
+// Get all servers (admin)
+router.get('/all', auth, adminAuth, async (req, res) => {
+  try {
+    const servers = await Server.find({}).lean();
+    res.json(servers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch servers' });
+  }
+});
+
+// Approve / deny server
+router.patch('/:id/status', auth, adminAuth, async (req, res) => {
+  const { status, rejectionReason } = req.body;
+  if (!['approved', 'denied', 'pending'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    server.status = status;
+    server.rejectionReason = status === 'denied' ? rejectionReason : undefined;
+    await server.save();
+
+    await sendDiscordNotification(
+      `🛠 Server **${server.name}** status: ${status.toUpperCase()}`
+    );
+
+    res.json({ message: 'Status updated.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Status update failed.' });
+  }
+});
+
+// Approve edit
+router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
+  try {
+    const { editId } = req.body;
+
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    const edit = server.editRequests.id(editId);
+    if (!edit) return res.status(404).json({ error: 'Edit request not found' });
+
+    Object.assign(server, {
+      description: edit.description,
+      logo: edit.logo,
+      website: edit.website,
+      language: edit.language,
+      members: edit.members,
+      type: edit.type,
+      nsfw: edit.nsfw,
+      tags: edit.tags
+    });
+
+    edit.deleteOne();
+    await server.save();
+
+    await sendDiscordNotification(`✅ Edit approved for **${server.name}**`);
+
+    res.json({ message: 'Edit approved.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Approve failed.' });
+  }
+});
+
+// Deny edit
+router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
+  try {
+    const { editId } = req.body;
+
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    const edit = server.editRequests.id(editId);
+    if (!edit) return res.status(404).json({ error: 'Edit request not found' });
+
+    edit.deleteOne();
+    await server.save();
+
+    await sendDiscordNotification(`❌ Edit denied for **${server.name}**`);
+
+    res.json({ message: 'Edit denied.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Deny failed.' });
+  }
+});
+
+// ========================================================
+// COMMENTS
+// ========================================================
+
 router.post('/:id/comments', auth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
-    if (!server || server.status !== 'approved') return res.status(404).json({ error: 'Server not found or not approved' });
+    if (!server || server.status !== 'approved') {
+      return res.status(404).json({ error: 'Server not found' });
+    }
 
     const comment = new Comment({
       server: server._id,
       user: req.user._id,
-      userDiscord: { username: req.user.discordUsername, tag: req.user.discordTag },
+      userDiscord: {
+        username: req.user.discordUsername,
+        tag: req.user.discordTag
+      },
       text: req.body.text
     });
 
     await comment.save();
-    res.status(201).json({ message: 'Comment posted', comment });
+    res.json({ message: 'Comment posted.' });
+
   } catch (err) {
-    console.error('Post comment error:', err);
-    res.status(500).json({ error: 'Failed to post comment' });
+    console.error(err);
+    res.status(500).json({ error: 'Comment failed.' });
   }
 });
 
-// --- Update server members count (by bot) ---
+// ========================================================
+// REPORTS
+// ========================================================
+
+router.post('/:id/report', auth, async (req, res) => {
+  const { reason } = req.body;
+  if (!reason) return res.status(400).json({ error: 'Reason required' });
+
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    server.reports.push({
+      user: req.user._id,
+      reason
+    });
+
+    await server.save();
+
+    await sendDiscordNotification(
+      `🚨 Server reported: **${server.name}**
+Reason: ${reason}
+By: ${req.user.discordUsername}`
+    );
+
+    res.json({ message: 'Report submitted.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Report failed.' });
+  }
+});
+
+// ========================================================
+// MEMBER COUNT BOT UPDATE
+// ========================================================
+
 router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
     const { members } = req.body;
-    if (members == null || isNaN(members)) return res.status(400).json({ error: 'Invalid members count.' });
+    if (members == null || isNaN(members)) {
+      return res.status(400).json({ error: 'Invalid members count.' });
+    }
 
     const server = await Server.findOne({ discordServerId: req.params.discordServerId });
     if (!server) return res.status(404).json({ error: 'Server not found' });
@@ -232,38 +355,18 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
     server.members = Number(members);
     await server.save();
 
-    res.json({ message: 'Members count updated successfully.', members: server.members });
+    res.json({ message: 'Members updated.', members: server.members });
+
   } catch (err) {
-    console.error('Update members error:', err);
-    res.status(500).json({ error: 'Failed to update members.' });
+    console.error(err);
+    res.status(500).json({ error: 'Member update failed.' });
   }
 });
 
-// --- Update server status ---
-router.patch('/:id/status', auth, adminAuth, async (req, res) => {
-  const { status, rejectionReason } = req.body;
-  if (!['approved', 'denied', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status value' });
+// ========================================================
+// DELETE SERVER
+// ========================================================
 
-  try {
-    const server = await Server.findById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
-    server.status = status;
-    server.rejectionReason = status === 'denied' && rejectionReason ? rejectionReason : undefined;
-    await server.save();
-
-    await sendDiscordNotification(
-      `Server "${server.name}" has been ${status.toUpperCase()}${status === 'denied' && rejectionReason ? ` with reason: ${rejectionReason}` : ''}.`
-    );
-
-    res.json({ message: `Server ${status} successfully.` });
-  } catch (err) {
-    console.error('Update server status error:', err);
-    res.status(500).json({ error: 'Failed to update server' });
-  }
-});
-
-// --- Delete a server ---
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   try {
     const server = await Server.findById(req.params.id);
@@ -272,35 +375,13 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     await Comment.deleteMany({ server: server._id });
     await server.deleteOne();
 
-    await sendDiscordNotification(`Server "${server.name}" has been deleted by an admin.`);
+    await sendDiscordNotification(`🗑 Server deleted: **${server.name}**`);
 
-    res.json({ message: 'Server deleted successfully.' });
+    res.json({ message: 'Server deleted.' });
+
   } catch (err) {
-    console.error('Delete server error:', err);
-    res.status(500).json({ error: 'Failed to delete server' });
-  }
-});
-
-// --- Report a server ---
-router.post('/:id/report', auth, async (req, res) => {
-  const { reason } = req.body;
-  if (!reason) return res.status(400).json({ error: 'You must provide a reason for reporting the server.' });
-
-  try {
-    const server = await Server.findById(req.params.id);
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
-    server.reports.push({ user: req.user._id, reason });
-    await server.save();
-
-    await sendDiscordNotification(
-      `A server "${server.name}" has been reported by ${req.user.discordUsername} with reason: ${reason}.`
-    );
-
-    res.json({ message: 'Server reported successfully. It will be reviewed by an admin.' });
-  } catch (err) {
-    console.error('Report server error:', err);
-    res.status(500).json({ error: 'Failed to report the server' });
+    console.error(err);
+    res.status(500).json({ error: 'Delete failed.' });
   }
 });
 
