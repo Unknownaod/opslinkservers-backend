@@ -373,13 +373,26 @@ router.post('/:discordServerId/live/update', async (req, res) => {
       return res.status(400).json({ error: 'Invalid analytics payload' });
     }
 
-    liveAnalytics.set(req.params.discordServerId, {
-      ...data,
+    // Normalize structure so dashboard can use it directly
+    const analytics = {
+      name: data.name || null, // optional: server name from bot payload
+      members: Number(data.members) || 0,
+      humans: Number(data.humans) || 0,
+      bots: Number(data.bots) || 0,
+      online: Number(data.online) || 0,
+      idle: Number(data.idle) || 0,
+      dnd: Number(data.dnd) || 0,
+      offline: Number(data.offline) || 0,
+      channels: {
+        text: Number(data.channels?.text) || 0,
+        voice: Number(data.channels?.voice) || 0,
+        category: Number(data.channels?.category) || 0,
+        threads: Number(data.channels?.threads) || 0
+      },
       updatedAt: Date.now()
-    });
+    };
 
-    // Optional: save to file
-    // fs.writeFileSync(liveFile, JSON.stringify(Object.fromEntries(liveAnalytics)));
+    liveAnalytics.set(req.params.discordServerId, analytics);
 
     res.json({ message: 'Live analytics updated.' });
   } catch (err) {
@@ -396,6 +409,7 @@ router.get('/:discordServerId/live', (req, res) => {
   }
   res.json(data);
 });
+
 
 // ============================
 // DELETE SERVER (ADMIN)
@@ -457,3 +471,4 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
