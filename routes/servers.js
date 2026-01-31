@@ -1,4 +1,4 @@
-const { ChannelType } = require('discord.js'); // make sure this is imported
+const { ChannelType } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
@@ -14,21 +14,11 @@ const router = express.Router();
 // ============================
 const liveAnalytics = new Map();
 
-// Optional: load from file if persistence needed
-// const fs = require('fs');
-// const path = require('path');
-// const liveFile = path.join(__dirname, 'liveAnalytics.json');
-// if (fs.existsSync(liveFile)) {
-//   const raw = fs.readFileSync(liveFile, 'utf-8');
-//   const data = JSON.parse(raw);
-//   Object.entries(data).forEach(([id, val]) => liveAnalytics.set(id, val));
-// }
-
 // ============================
-// PUBLIC ROUTES (STATIC FIRST)
+// PUBLIC ROUTES
 // ============================
 
-// Get all approved servers (public)
+// Get all approved servers
 router.get('/', async (req, res) => {
   try {
     const servers = await Server.find({ status: 'approved' }).lean();
@@ -40,10 +30,10 @@ router.get('/', async (req, res) => {
 });
 
 // ============================
-// ADMIN ROUTES (STATIC)
+// ADMIN ROUTES
 // ============================
 
-// Get ALL servers (admin)
+// Get all servers (admin)
 router.get('/all', auth, adminAuth, async (req, res) => {
   try {
     const servers = await Server.find({}).lean();
@@ -118,11 +108,11 @@ Discord ID: ${server.discordServerId}`
   }
 });
 
-// ===========================================
-// GET ALL SERVERS
-// ============================================
+// ============================
+// USER-SPECIFIC ROUTES
+// ============================
 
-// Get all servers submitted by the logged-in user (any status)
+// Get servers submitted by logged-in user
 router.get('/mine', auth, async (req, res) => {
   try {
     const servers = await Server.find({ submitter: req.user._id }).lean();
@@ -134,20 +124,15 @@ router.get('/mine', auth, async (req, res) => {
 });
 
 // ============================
-// PARAM ROUTES (SPECIFIC → GENERIC)
+// SERVER PARAMETER ROUTES
 // ============================
 
 // Update server status (admin)
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   const { status, rejectionReason } = req.body;
-
-  if (!['approved', 'denied', 'pending'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
+  if (!['approved', 'denied', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   try {
     const server = await Server.findById(req.params.id);
@@ -162,7 +147,6 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
     );
 
     res.json({ message: 'Status updated.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Status update failed.' });
@@ -171,23 +155,16 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
 
 // Request edit (owner)
 router.post('/:id/request-edit', auth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    if (server.submitter.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Not server owner' });
-    }
+    if (server.submitter.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Not server owner' });
 
     const changes = req.body.changes || {};
-
-    if (!Object.keys(changes).length) {
-      return res.status(400).json({ error: 'No changes submitted.' });
-    }
+    if (!Object.keys(changes).length) return res.status(400).json({ error: 'No changes submitted.' });
 
     // sanitize tags
     if (changes.tags) {
@@ -210,7 +187,6 @@ router.post('/:id/request-edit', auth, async (req, res) => {
     );
 
     res.json({ message: 'Edit request submitted.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Edit request failed.' });
@@ -219,9 +195,7 @@ router.post('/:id/request-edit', auth, async (req, res) => {
 
 // Approve edit (admin)
 router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const { editId } = req.body;
@@ -237,7 +211,6 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
 
     await sendDiscordNotification(`✅ Edit approved for **${server.name}**`);
     res.json({ message: 'Edit approved.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Approve failed.' });
@@ -246,9 +219,7 @@ router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
 
 // Deny edit (admin)
 router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const { editId } = req.body;
@@ -263,7 +234,6 @@ router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
 
     await sendDiscordNotification(`❌ Edit denied for **${server.name}**`);
     res.json({ message: 'Edit denied.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Deny failed.' });
@@ -272,15 +242,11 @@ router.post('/:id/edit-deny', auth, adminAuth, async (req, res) => {
 
 // Post comment
 router.post('/:id/comments', auth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const server = await Server.findById(req.params.id);
-    if (!server || server.status !== 'approved') {
-      return res.status(404).json({ error: 'Server not found' });
-    }
+    if (!server || server.status !== 'approved') return res.status(404).json({ error: 'Server not found' });
 
     const comment = new Comment({
       server: server._id,
@@ -294,7 +260,6 @@ router.post('/:id/comments', auth, async (req, res) => {
 
     await comment.save();
     res.json({ message: 'Comment posted.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Comment failed.' });
@@ -303,13 +268,8 @@ router.post('/:id/comments', auth, async (req, res) => {
 
 // Report server
 router.post('/:id/report', auth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
-
-  if (!req.body.reason) {
-    return res.status(400).json({ error: 'Reason required' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
+  if (!req.body.reason) return res.status(400).json({ error: 'Reason required' });
 
   try {
     const server = await Server.findById(req.params.id);
@@ -329,7 +289,6 @@ By: ${req.user.discordUsername}`
     );
 
     res.json({ message: 'Report submitted.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Report failed.' });
@@ -339,21 +298,15 @@ By: ${req.user.discordUsername}`
 // Update member count (bot)
 router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
-    if (isNaN(req.body.members)) {
-      return res.status(400).json({ error: 'Invalid members count.' });
-    }
+    if (isNaN(req.body.members)) return res.status(400).json({ error: 'Invalid members count.' });
 
-    const server = await Server.findOne({
-      discordServerId: req.params.discordServerId
-    });
-
+    const server = await Server.findOne({ discordServerId: req.params.discordServerId });
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
     server.members = Number(req.body.members);
     await server.save();
 
     res.json({ message: 'Members updated.', members: server.members });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Member update failed.' });
@@ -368,14 +321,10 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
 router.post('/:discordServerId/live/update', async (req, res) => {
   try {
     const data = req.body;
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid analytics payload' });
 
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ error: 'Invalid analytics payload' });
-    }
-
-    // Normalize structure so dashboard can use it directly
     const analytics = {
-      name: data.name || null, // optional: server name from bot payload
+      name: data.name || null,
       members: Number(data.members) || 0,
       humans: Number(data.humans) || 0,
       bots: Number(data.bots) || 0,
@@ -389,11 +338,16 @@ router.post('/:discordServerId/live/update', async (req, res) => {
         category: Number(data.channels?.category) || 0,
         threads: Number(data.channels?.threads) || 0
       },
+      topMembers: Array.isArray(data.topMembers) ? data.topMembers : [],
+      topChannels: Array.isArray(data.topChannels) ? data.topChannels : [],
+      topEmojis: Array.isArray(data.topEmojis) ? data.topEmojis : [],
+      joinsSinceStart: Number(data.joinsSinceStart) || 0,
+      leavesSinceStart: Number(data.leavesSinceStart) || 0,
+      boosts: Number(data.boosts) || 0,
       updatedAt: Date.now()
     };
 
     liveAnalytics.set(req.params.discordServerId, analytics);
-
     res.json({ message: 'Live analytics updated.' });
   } catch (err) {
     console.error(err);
@@ -404,21 +358,15 @@ router.post('/:discordServerId/live/update', async (req, res) => {
 // Frontend fetches analytics
 router.get('/:discordServerId/live', (req, res) => {
   const data = liveAnalytics.get(req.params.discordServerId);
-  if (!data) {
-    return res.status(404).json({ error: 'Live analytics not available yet' });
-  }
+  if (!data) return res.status(404).json({ error: 'Live analytics not available yet' });
   res.json(data);
 });
-
 
 // ============================
 // DELETE SERVER (ADMIN)
 // ============================
-
 router.delete('/:id', auth, adminAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const server = await Server.findById(req.params.id);
@@ -429,7 +377,6 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
 
     await sendDiscordNotification(`🗑 Server deleted: **${server.name}**`);
     res.json({ message: 'Server deleted.' });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Delete failed.' });
@@ -442,17 +389,13 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
 
 // Get single server + comments
 router.get('/:id', async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid server ID' });
-  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   try {
     const server = await Server.findById(req.params.id).lean();
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    const comments = await Comment.find({ server: server._id })
-      .sort({ createdAt: -1 })
-      .lean();
+    const comments = await Comment.find({ server: server._id }).sort({ createdAt: -1 }).lean();
 
     res.json({
       ...server,
@@ -463,7 +406,6 @@ router.get('/:id', async (req, res) => {
         createdAt: c.createdAt
       }))
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch server' });
@@ -471,4 +413,3 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
-
