@@ -1,3 +1,4 @@
+const { ChannelType } = require('discord.js'); // make sure this is imported
 const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
@@ -346,6 +347,59 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
   }
 });
 
+// LIVE analytics (pulls from bot/Discord)
+router.get('/:discordServerId/live', async (req, res) => {
+  try {
+    const server = await Server.findOne({
+      discordServerId: req.params.discordServerId
+    });
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    // Access your bot client
+    const client = req.app.get('botClient'); // make sure your Express app stores the Discord client
+    if (!client) return res.status(500).json({ error: 'Bot not initialized.' });
+
+    const guild = await client.guilds.fetch(req.params.discordServerId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: 'Guild not found in bot.' });
+
+    const members = await guild.members.fetch({ withPresences: true });
+
+    const humans = members.filter(m => !m.user.bot).size;
+    const bots = members.filter(m => m.user.bot).size;
+
+    const online = members.filter(m => m.presence?.status === 'online').size;
+    const idle = members.filter(m => m.presence?.status === 'idle').size;
+    const dnd = members.filter(m => m.presence?.status === 'dnd').size;
+    const offline = members.size - (online + idle + dnd);
+
+    const boosts = guild.premiumSubscriptionCount || 0;
+
+    const channels = {
+      text: guild.channels.cache.filter(c => c.type === 0).size, // GuildText
+      voice: guild.channels.cache.filter(c => c.type === 2).size, // GuildVoice
+      category: guild.channels.cache.filter(c => c.type === 4).size // GuildCategory
+    };
+
+    res.json({
+      name: guild.name,
+      id: guild.id,
+      members: guild.memberCount,
+      humans,
+      bots,
+      online,
+      idle,
+      dnd,
+      offline,
+      boosts,
+      channels
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch live analytics.' });
+  }
+});
+
 // Delete server (admin)
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -403,6 +457,7 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
