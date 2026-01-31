@@ -9,9 +9,24 @@ const sendDiscordNotification = require('../utils/discordWebhook');
 
 const router = express.Router();
 
-// ========================================================
+// ============================
+// LIVE ANALYTICS STORE (IN-MEMORY)
+// ============================
+const liveAnalytics = new Map();
+
+// Optional: load from file if persistence needed
+// const fs = require('fs');
+// const path = require('path');
+// const liveFile = path.join(__dirname, 'liveAnalytics.json');
+// if (fs.existsSync(liveFile)) {
+//   const raw = fs.readFileSync(liveFile, 'utf-8');
+//   const data = JSON.parse(raw);
+//   Object.entries(data).forEach(([id, val]) => liveAnalytics.set(id, val));
+// }
+
+// ============================
 // PUBLIC ROUTES (STATIC FIRST)
-// ========================================================
+// ============================
 
 // Get all approved servers (public)
 router.get('/', async (req, res) => {
@@ -24,9 +39,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ========================================================
+// ============================
 // ADMIN ROUTES (STATIC)
-// ========================================================
+// ============================
 
 // Get ALL servers (admin)
 router.get('/all', auth, adminAuth, async (req, res) => {
@@ -39,9 +54,9 @@ router.get('/all', auth, adminAuth, async (req, res) => {
   }
 });
 
-// ========================================================
+// ============================
 // SERVER SUBMISSION
-// ========================================================
+// ============================
 
 router.post('/', auth, async (req, res) => {
   try {
@@ -118,10 +133,9 @@ router.get('/mine', auth, async (req, res) => {
   }
 });
 
-
-// ========================================================
+// ============================
 // PARAM ROUTES (SPECIFIC → GENERIC)
-// ========================================================
+// ============================
 
 // Update server status (admin)
 router.patch('/:id/status', auth, adminAuth, async (req, res) => {
@@ -202,7 +216,6 @@ router.post('/:id/request-edit', auth, async (req, res) => {
     res.status(500).json({ error: 'Edit request failed.' });
   }
 });
-
 
 // Approve edit (admin)
 router.post('/:id/edit-approve', auth, adminAuth, async (req, res) => {
@@ -347,60 +360,47 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
   }
 });
 
-// LIVE analytics (pulls from bot/Discord)
-router.get('/:discordServerId/live', async (req, res) => {
+// ============================
+// LIVE ANALYTICS ENDPOINTS
+// ============================
+
+// Bot pushes analytics
+router.post('/:discordServerId/live/update', async (req, res) => {
   try {
-    const server = await Server.findOne({
-      discordServerId: req.params.discordServerId
-    });
-    if (!server) return res.status(404).json({ error: 'Server not found' });
+    const data = req.body;
 
-    // Access your bot client
-    const client = req.app.get('botClient'); // make sure your Express app stores the Discord client
-    if (!client) return res.status(500).json({ error: 'Bot not initialized.' });
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'Invalid analytics payload' });
+    }
 
-    const guild = await client.guilds.fetch(req.params.discordServerId).catch(() => null);
-    if (!guild) return res.status(404).json({ error: 'Guild not found in bot.' });
-
-    const members = await guild.members.fetch({ withPresences: true });
-
-    const humans = members.filter(m => !m.user.bot).size;
-    const bots = members.filter(m => m.user.bot).size;
-
-    const online = members.filter(m => m.presence?.status === 'online').size;
-    const idle = members.filter(m => m.presence?.status === 'idle').size;
-    const dnd = members.filter(m => m.presence?.status === 'dnd').size;
-    const offline = members.size - (online + idle + dnd);
-
-    const boosts = guild.premiumSubscriptionCount || 0;
-
-    const channels = {
-      text: guild.channels.cache.filter(c => c.type === 0).size, // GuildText
-      voice: guild.channels.cache.filter(c => c.type === 2).size, // GuildVoice
-      category: guild.channels.cache.filter(c => c.type === 4).size // GuildCategory
-    };
-
-    res.json({
-      name: guild.name,
-      id: guild.id,
-      members: guild.memberCount,
-      humans,
-      bots,
-      online,
-      idle,
-      dnd,
-      offline,
-      boosts,
-      channels
+    liveAnalytics.set(req.params.discordServerId, {
+      ...data,
+      updatedAt: Date.now()
     });
 
+    // Optional: save to file
+    // fs.writeFileSync(liveFile, JSON.stringify(Object.fromEntries(liveAnalytics)));
+
+    res.json({ message: 'Live analytics updated.' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch live analytics.' });
+    res.status(500).json({ error: 'Failed to update live analytics.' });
   }
 });
 
-// Delete server (admin)
+// Frontend fetches analytics
+router.get('/:discordServerId/live', (req, res) => {
+  const data = liveAnalytics.get(req.params.discordServerId);
+  if (!data) {
+    return res.status(404).json({ error: 'Live analytics not available yet' });
+  }
+  res.json(data);
+});
+
+// ============================
+// DELETE SERVER (ADMIN)
+// ============================
+
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: 'Invalid server ID' });
@@ -422,9 +422,9 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
   }
 });
 
-// ========================================================
+// ============================
 // GENERIC — MUST BE LAST
-// ========================================================
+// ============================
 
 // Get single server + comments
 router.get('/:id', async (req, res) => {
@@ -457,7 +457,3 @@ router.get('/:id', async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
