@@ -10,6 +10,11 @@ const sendDiscordNotification = require('../utils/discordWebhook');
 const router = express.Router();
 
 // ============================
+// LIVE ANALYTICS STORE (IN-MEMORY)
+// ============================
+const liveAnalytics = new Map();
+
+// ============================
 // PUBLIC ROUTES
 // ============================
 
@@ -96,6 +101,7 @@ Discord ID: ${server.discordServerId}`
     );
 
     res.status(201).json({ message: 'Server submitted successfully.' });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Submission failed.' });
@@ -307,7 +313,58 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
   }
 });
 
-// Delete server (admin)
+// ============================
+// LIVE ANALYTICS ENDPOINTS
+// ============================
+
+// Bot pushes analytics
+router.post('/:discordServerId/live/update', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid analytics payload' });
+
+    const analytics = {
+      name: data.name || null,
+      members: Number(data.members) || 0,
+      humans: Number(data.humans) || 0,
+      bots: Number(data.bots) || 0,
+      online: Number(data.online) || 0,
+      idle: Number(data.idle) || 0,
+      dnd: Number(data.dnd) || 0,
+      offline: Number(data.offline) || 0,
+      channels: {
+        text: Number(data.channels?.text) || 0,
+        voice: Number(data.channels?.voice) || 0,
+        category: Number(data.channels?.category) || 0,
+        threads: Number(data.channels?.threads) || 0
+      },
+      topMembers: Array.isArray(data.topMembers) ? data.topMembers : [],
+      topChannels: Array.isArray(data.topChannels) ? data.topChannels : [],
+      topEmojis: Array.isArray(data.topEmojis) ? data.topEmojis : [],
+      joinsSinceStart: Number(data.joinsSinceStart) || 0,
+      leavesSinceStart: Number(data.leavesSinceStart) || 0,
+      boosts: Number(data.boosts) || 0,
+      updatedAt: Date.now()
+    };
+
+    liveAnalytics.set(req.params.discordServerId, analytics);
+    res.json({ message: 'Live analytics updated.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update live analytics.' });
+  }
+});
+
+// Frontend fetches analytics
+router.get('/:discordServerId/live', (req, res) => {
+  const data = liveAnalytics.get(req.params.discordServerId);
+  if (!data) return res.status(404).json({ error: 'Live analytics not available yet' });
+  res.json(data);
+});
+
+// ============================
+// DELETE SERVER (ADMIN)
+// ============================
 router.delete('/:id', auth, adminAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
@@ -325,6 +382,10 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     res.status(500).json({ error: 'Delete failed.' });
   }
 });
+
+// ============================
+// GENERIC — MUST BE LAST
+// ============================
 
 // Get single server + comments
 router.get('/:id', async (req, res) => {
