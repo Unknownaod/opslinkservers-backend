@@ -1,7 +1,7 @@
 // utils/sendEmail.js
-import fetch from 'node-fetch';
+const fetch = require('node-fetch');
 
-export async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html }) {
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -28,3 +28,5 @@ export async function sendEmail({ to, subject, html }) {
     throw err;
   }
 }
+
+module.exports = { sendEmail };
