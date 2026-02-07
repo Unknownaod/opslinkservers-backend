@@ -7,7 +7,7 @@ const path = require('path');
 // --------------------
 // Routes
 // --------------------
-const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes/auth');      // CommonJS style
 const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
 
@@ -17,14 +17,15 @@ const app = express();
 // CORS Setup
 // --------------------
 const allowedOrigins = [
-  'https://servers.opslinksystems.xyz',
-  'http://localhost:3000',
-  'http://localhost:5500',
+  'https://servers.opslinksystems.xyz',                 // production frontend
+  'https://opslinkservers-ek35d02rp-opslink-systems-projects.vercel.app', // Vercel frontend
+  'http://localhost:3000',                              // local dev
+  'http://localhost:5500',                              // live preview
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
+    if (!origin) return callback(null, true); // allow server-to-server requests
     if (allowedOrigins.includes(origin)) return callback(null, true);
 
     console.warn('❌ Blocked by CORS:', origin);
@@ -57,7 +58,8 @@ mongoose.connect(process.env.MONGO_URI)
 // --------------------
 // Routes
 // --------------------
-app.use('/api', authRoutes);
+// Make sure /api/auth matches your frontend fetch
+app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
 
