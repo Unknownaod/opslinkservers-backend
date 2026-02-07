@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 
+// Routes
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
@@ -14,14 +15,14 @@ const app = express();
 // CORS Setup
 // --------------------
 const allowedOrigins = [
-  'https://servers.opslinksystems.xyz', // your production frontend
+  'https://servers.opslinksystems.xyz', // production frontend
   'http://localhost:3000',              // local dev
   'http://localhost:5500',              // live server preview
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (Postman, backend services, etc)
+    // Allow requests with no origin (Postman, backend services)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) return callback(null, true);
@@ -56,14 +57,34 @@ mongoose.connect(process.env.MONGO_URI)
 // --------------------
 // Routes
 // --------------------
+// Auth (signup, login, verify email, resend verification, change email)
 app.use('/api', authRoutes);
+
+// Servers API
 app.use('/api/servers', serverRoutes);
+
+// Admin API
 app.use('/api/admin', adminRoutes);
 
 // --------------------
 // Health check
 // --------------------
 app.get('/', (req, res) => res.send('OpsLink Backend is running'));
+
+// --------------------
+// 404 catch-all
+// --------------------
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// --------------------
+// Error handling middleware
+// --------------------
+app.use((err, req, res, next) => {
+  console.error('❌ Server error:', err.message);
+  res.status(500).json({ error: err.message || 'Server error' });
+});
 
 // --------------------
 // Server listen
