@@ -359,7 +359,6 @@ router.post('/reset-password', async (req, res) => {
 // =======================
 // QR Login Routes
 // =======================
-const { v4: uuidv4 } = require('uuid');
 
 // Temporary in-memory QR token storage
 // Format: { token: { valid: true, createdAt: timestamp } }
@@ -374,7 +373,7 @@ function verifyJWT(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // contains id and any other payload
+    req.user = decoded; // contains id and other payload
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -385,7 +384,8 @@ function verifyJWT(req, res, next) {
 // Generate QR Token (Desktop)
 // =======================
 router.get('/qr-generate', (req, res) => {
-  const token = uuidv4();
+  // Generate a 32-character random token
+  const token = crypto.randomBytes(16).toString('hex');
   qrTokens[token] = { valid: true, createdAt: Date.now() };
 
   // Auto-expire after 60 seconds
