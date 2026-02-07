@@ -57,20 +57,9 @@ mongoose.connect(process.env.MONGO_URI)
 // --------------------
 // Routes
 // --------------------
-
-// Helper function to handle default exports (ESM modules)
-function useRouter(module) {
-  return module.default || module;
-}
-
-// Auth routes
-app.use('/api', useRouter(authRoutes));
-
-// Servers API
-app.use('/api/servers', useRouter(serverRoutes));
-
-// Admin API
-app.use('/api/admin', useRouter(adminRoutes));
+app.use('/api', authRoutes);
+app.use('/api/servers', serverRoutes);
+app.use('/api/admin', adminRoutes);
 
 // --------------------
 // Health check
