@@ -20,7 +20,12 @@ const userSchema = new mongoose.Schema({
   // Password reset fields
   // =========================
   passwordResetToken: { type: String },
-  passwordResetExpires: { type: Date }
+  passwordResetExpires: { type: Date },
+
+  // =========================
+  // Token version for session invalidation
+  // =========================
+  tokenVersion: { type: Number, default: 0 }
 });
 
 // =========================
