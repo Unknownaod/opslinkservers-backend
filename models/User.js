@@ -14,7 +14,13 @@ const userSchema = new mongoose.Schema({
   // =========================
   isVerified: { type: Boolean, default: true }, // Existing users automatically verified
   emailVerificationToken: { type: String },
-  emailVerificationExpires: { type: Date }
+  emailVerificationExpires: { type: Date },
+
+  // =========================
+  // Password reset fields
+  // =========================
+  passwordResetToken: { type: String },
+  passwordResetExpires: { type: Date }
 });
 
 // =========================
