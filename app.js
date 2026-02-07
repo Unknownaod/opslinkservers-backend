@@ -3,11 +3,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');           // <-- needed for Socket.IO
+const { Server } = require('socket.io');
 
-// --------------------
-// Routes
-// --------------------
-const authRoutes = require('./routes/auth');      // CommonJS style
+const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
 
@@ -17,21 +16,20 @@ const app = express();
 // CORS Setup
 // --------------------
 const allowedOrigins = [
-  'https://servers.opslinksystems.xyz',                 // production frontend
-  'https://opslinkservers-ek35d02rp-opslink-systems-projects.vercel.app', // Vercel frontend
-  'http://localhost:3000',                              // local dev
-  'http://localhost:5500',                              // live preview
+  'https://servers.opslinksystems.xyz',
+  'https://opslinkservers-ek35d02rp-opslink-systems-projects.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5500',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow server-to-server requests
+    if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-
     console.warn('❌ Blocked by CORS:', origin);
     return callback(new Error('CORS not allowed'), false);
   },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET','POST','PATCH','DELETE','OPTIONS'],
   credentials: true,
 }));
 
@@ -58,7 +56,6 @@ mongoose.connect(process.env.MONGO_URI)
 // --------------------
 // Routes
 // --------------------
-// Make sure /api/auth matches your frontend fetch
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
@@ -84,9 +81,36 @@ app.use((err, req, res, next) => {
 });
 
 // --------------------
-// Server listen
+// HTTP Server + Socket.IO
 // --------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = http.createServer(app);
 
-module.exports = app;
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET','POST'],
+    credentials: true
+  },
+  path: '/socket.io', // <-- important, matches frontend default
+});
+
+global.io = io; // make io globally accessible for QR routes
+
+io.on('connection', socket => {
+  console.log('Socket connected:', socket.id);
+
+  socket.on('subscribe-token', token => {
+    socket.join(token);
+    console.log(`Socket ${socket.id} subscribed to token ${token}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Socket disconnected:', socket.id);
+  });
+});
+
+// --------------------
+// Start server
+// --------------------
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
