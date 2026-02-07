@@ -360,7 +360,6 @@ router.post('/reset-password', async (req, res) => {
 // QR Login Routes
 // =======================
 const { v4: uuidv4 } = require('uuid');
-const jwt = require('jsonwebtoken');
 const express = require('express');
 const router = express.Router();
 
@@ -445,4 +444,5 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = { router, qrTokens };
+
 
