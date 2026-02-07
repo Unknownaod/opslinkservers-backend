@@ -440,4 +440,5 @@ router.post('/qr-subscribe', (req, res) => {
   res.status(400).json({ error: 'Socket not found or server not initialized' });
 });
 
-module.exports = { router, qrTokens };
+module.exports = router;
+
