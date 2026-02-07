@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { sendEmail } = require('../utils/sendEmail');
+const bcrypt = require('bcrypt');
 
 const router = express.Router();
 const logoURL = "https://cdn.discordapp.com/attachments/1463619235904229378/1466802083834368184/FuwELkz.png?ex=69889d64&is=69874be4&hm=d91b7dc2a57a579671ead07b48c9dcf31f17984940c54ac8029b4bf571283396";
@@ -347,4 +348,5 @@ router.post('/reset-password', async (req, res) => {
 
 
 module.exports = router;
+
 
