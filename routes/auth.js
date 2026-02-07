@@ -250,4 +250,101 @@ router.get('/verify-email', async (req, res) => {
   }
 });
 
+
+// =======================
+// Forgot Password
+// =======================
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: 'Account not found' });
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+
+    user.passwordResetToken = resetToken;
+    user.passwordResetExpires = resetExpires;
+    await user.save();
+
+    const resetURL = `${process.env.FRONTEND_URL}/reset.html?token=${resetToken}`;
+
+    await sendEmail({
+      to: user.email,
+      subject: 'OpsLink Password Reset',
+      html: generateEmailHTML(
+        "Reset Your Password",
+        "Click the button below to reset your password. This link expires in 1 hour.",
+        "Reset Password",
+        resetURL
+      )
+    });
+
+    res.json({ success: true, message: 'Password reset email sent', redirect: '/passwordverify.html' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// =======================
+// Verify Reset Token
+// =======================
+router.get('/reset-password', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Token missing' });
+
+  try {
+    const user = await User.findOne({
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+
+    res.json({ success: true, email: user.email });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// =======================
+// Reset Password
+// =======================
+router.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password required' });
+
+  try {
+    const user = await User.findOne({
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save();
+
+    res.json({ success: true, message: 'Password has been reset successfully' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
 module.exports = router;
+
