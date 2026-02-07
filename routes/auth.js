@@ -1,8 +1,8 @@
-const express = require('express');
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const sendEmail = require('../utils/sendEmail');
+import express from 'express';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import sendEmail from '../utils/sendEmail.js';
 
 const router = express.Router();
 
@@ -226,6 +226,4 @@ router.get('/verify-email', async (req, res) => {
   }
 });
 
-
-module.exports = router;
-
+export default router;
