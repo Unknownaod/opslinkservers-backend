@@ -326,7 +326,6 @@ router.post('/reset-password', async (req, res) => {
   }
 
   try {
-    // Find user with valid reset token
     const user = await User.findOne({
       passwordResetToken: token,
       passwordResetExpires: { $gt: Date.now() }
@@ -336,15 +335,14 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired token' });
     }
 
-    // Hash new password before saving
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    // Set new password (pre-save hook will hash it)
+    user.password = newPassword;
 
-    // Clear the reset token
+    // Clear reset token
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
 
-    // Optional: invalidate old sessions (if you store JWTs in a DB or blacklist)
+    // Increment tokenVersion to invalidate old sessions
     user.tokenVersion = (user.tokenVersion || 0) + 1;
 
     await user.save();
@@ -358,7 +356,9 @@ router.post('/reset-password', async (req, res) => {
 });
 
 
+
 module.exports = router;
+
 
 
 
