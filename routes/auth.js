@@ -45,7 +45,7 @@ router.post('/signup', async (req, res) => {
 
     await user.save();
 
-    const verifyURL = `${process.env.FRONTEND_URL}/verify.html?token=${verificationToken}`;
+    const verifyURL = `https://opslinkservers-backend.onrender.com/api/auth/verify-email?token=${verificationToken}`;
 
     await sendEmail({
       to: email,
@@ -123,7 +123,7 @@ router.post('/resend-verification', async (req, res) => {
     user.emailVerificationExpires = verificationExpires;
     await user.save();
 
-    const verifyURL = `${process.env.FRONTEND_URL}/verify.html?token=${verificationToken}`;
+    const verifyURL = `https://opslinkservers-backend.onrender.com/api/auth/verify-email?token=${verificationToken}`;
 
     await sendEmail({
       to: user.email,
@@ -173,7 +173,7 @@ router.post('/change-email', async (req, res) => {
     user.emailVerificationExpires = verificationExpires;
     await user.save();
 
-    const verifyURL = `${process.env.FRONTEND_URL}/verify.html?token=${verificationToken}`;
+    const verifyURL = `https://opslinkservers-backend.onrender.com/api/auth/verify-email?token=${verificationToken}`;
 
     await sendEmail({
       to: newEmail,
@@ -195,4 +195,37 @@ router.post('/change-email', async (req, res) => {
   }
 });
 
+// =======================
+// Verify Email Token
+// =======================
+router.get('/verify-email', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
+
+  try {
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
+    }
+
+    user.isVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+
+    await user.save();
+
+    res.redirect(`${process.env.FRONTEND_URL}/verified.html`);
+
+  } catch (err) {
+    console.error(err);
+    res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
+  }
+});
+
+
 module.exports = router;
+
