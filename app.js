@@ -16,14 +16,18 @@ const app = express();
 const allowedOrigins = [
   'https://servers.opslinksystems.xyz', // your production frontend
   'http://localhost:3000',              // local dev
+  'http://localhost:5500',              // live server preview
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like Postman or server-to-server)
+    // Allow requests with no origin (Postman, backend services, etc)
     if (!origin) return callback(null, true);
+
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error('CORS not allowed'), false);
+
+    console.warn('❌ Blocked by CORS:', origin);
+    return callback(new Error('CORS not allowed'), false);
   },
   methods: ['GET','POST','PATCH','DELETE','OPTIONS'],
   credentials: true
@@ -67,4 +71,4 @@ app.get('/', (req, res) => res.send('OpsLink Backend is running'));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-module.exports = app; // export for testing or bot integration
+module.exports = app;
