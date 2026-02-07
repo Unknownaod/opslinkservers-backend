@@ -16,6 +16,7 @@
     "mongoose": "^7.3.1",
     "multer": "^1.4.5-lts.1",
     "discord.js": "^14.14.0",
-    "resend": "^1.0.1"
+    "resend": "^1.0.1",
+    "socket.io": "^4.7.2"
   }
 }
