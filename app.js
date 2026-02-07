@@ -4,7 +4,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 
+// --------------------
 // Routes
+// --------------------
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
@@ -15,23 +17,21 @@ const app = express();
 // CORS Setup
 // --------------------
 const allowedOrigins = [
-  'https://servers.opslinksystems.xyz', // production frontend
-  'http://localhost:3000',              // local dev
-  'http://localhost:5500',              // live server preview
+  'https://servers.opslinksystems.xyz',
+  'http://localhost:3000',
+  'http://localhost:5500',
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (Postman, backend services)
+  origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) return callback(null, true);
 
     console.warn('❌ Blocked by CORS:', origin);
     return callback(new Error('CORS not allowed'), false);
   },
-  methods: ['GET','POST','PATCH','DELETE','OPTIONS'],
-  credentials: true
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
 }));
 
 // --------------------
@@ -40,7 +40,7 @@ app.use(cors({
 app.use(express.json());
 
 // --------------------
-// Serve static uploads (logos, images, etc.)
+// Serve static uploads
 // --------------------
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -57,14 +57,20 @@ mongoose.connect(process.env.MONGO_URI)
 // --------------------
 // Routes
 // --------------------
-// Auth (signup, login, verify email, resend verification, change email)
-app.use('/api', authRoutes);
+
+// Helper function to handle default exports (ESM modules)
+function useRouter(module) {
+  return module.default || module;
+}
+
+// Auth routes
+app.use('/api', useRouter(authRoutes));
 
 // Servers API
-app.use('/api/servers', serverRoutes);
+app.use('/api/servers', useRouter(serverRoutes));
 
 // Admin API
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', useRouter(adminRoutes));
 
 // --------------------
 // Health check
