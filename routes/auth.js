@@ -360,31 +360,38 @@ router.post('/reset-password', async (req, res) => {
 // QR Login Routes
 // =======================
 const { v4: uuidv4 } = require('uuid');
-const socketio = require('socket.io'); // We'll assume Socket.IO is initialized in your server file
+const jwt = require('jsonwebtoken');
+const express = require('express');
+const router = express.Router();
 
-// In-memory storage for QR tokens (temporary)
+// Temporary in-memory QR token storage
+// Format: { token: { valid: true, createdAt: timestamp } }
 const qrTokens = {};
 
-// --- Middleware to verify JWT (mobile users) ---
+// =======================
+// Middleware: Verify JWT (Mobile Users)
+// =======================
 function verifyJWT(req, res, next) {
   const token = req.headers['authorization']?.split(' ')[1]; // Bearer token
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = decoded; // contains id and any other payload
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
-// --- Generate QR Token for Desktop ---
+// =======================
+// Generate QR Token (Desktop)
+// =======================
 router.get('/qr-generate', (req, res) => {
   const token = uuidv4();
   qrTokens[token] = { valid: true, createdAt: Date.now() };
 
-  // Automatically expire after 60 seconds
+  // Auto-expire after 60 seconds
   setTimeout(() => {
     if (qrTokens[token]) qrTokens[token].valid = false;
   }, 60 * 1000);
@@ -392,48 +399,50 @@ router.get('/qr-generate', (req, res) => {
   res.json({ token });
 });
 
-// --- Mobile scans QR Token ---
+// =======================
+// Mobile scans QR token
+// =======================
 router.post('/qr-scan', verifyJWT, (req, res) => {
   const { token } = req.body;
-
   if (!token) return res.status(400).json({ error: 'Missing QR token' });
-  const qrEntry = qrTokens[token];
 
+  const qrEntry = qrTokens[token];
   if (!qrEntry || !qrEntry.valid) {
     return res.status(400).json({ error: 'Invalid or expired QR token' });
   }
 
-  qrEntry.valid = false; // Mark token as used
+  qrEntry.valid = false; // mark as used
 
-  // Emit event to desktop via Socket.IO
-  if (global.io) { // Assuming you attached io to global in server.js
+  // Emit login-success to desktop via Socket.IO
+  // Desktop should have joined a room named by the token
+  if (global.io) {
     global.io.to(token).emit('login-success', {
       userId: req.user.id,
       email: req.user.email,
-      discordUsername: req.user.discordUsername
+      discordUsername: req.user.discordUsername,
     });
   }
 
   res.json({ success: true, message: 'QR login approved' });
 });
 
-// --- Desktop subscribes to QR token for real-time login ---
+// =======================
+// Desktop subscribes to QR token (Socket.IO room)
+// =======================
 router.post('/qr-subscribe', (req, res) => {
   const { token, socketId } = req.body;
   if (!token || !socketId) return res.status(400).json({ error: 'Missing token or socketId' });
 
-  // Add socket to room (requires Socket.IO instance)
   if (global.io) {
     const socket = global.io.sockets.sockets.get(socketId);
     if (socket) {
-      socket.join(token);
-      return res.json({ success: true });
+      socket.join(token); // desktop joins a room named after the token
+      return res.json({ success: true, message: 'Subscribed to QR token' });
     }
   }
 
   res.status(400).json({ error: 'Socket not found or server not initialized' });
 });
 
+module.exports = { router, qrTokens };
 
-
-module.exports = router;
