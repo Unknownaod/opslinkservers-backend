@@ -360,8 +360,6 @@ router.post('/reset-password', async (req, res) => {
 // QR Login Routes
 // =======================
 const { v4: uuidv4 } = require('uuid');
-const express = require('express');
-const router = express.Router();
 
 // Temporary in-memory QR token storage
 // Format: { token: { valid: true, createdAt: timestamp } }
@@ -413,7 +411,6 @@ router.post('/qr-scan', verifyJWT, (req, res) => {
   qrEntry.valid = false; // mark as used
 
   // Emit login-success to desktop via Socket.IO
-  // Desktop should have joined a room named by the token
   if (global.io) {
     global.io.to(token).emit('login-success', {
       userId: req.user.id,
@@ -444,5 +441,3 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = { router, qrTokens };
-
-
