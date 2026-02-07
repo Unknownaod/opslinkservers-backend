@@ -373,7 +373,7 @@ function verifyJWT(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // contains id and other payload
+    req.user = decoded; // contains id, email, discordUsername, role, etc.
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -384,7 +384,6 @@ function verifyJWT(req, res, next) {
 // Generate QR Token (Desktop)
 // =======================
 router.get('/qr-generate', (req, res) => {
-  // Generate a 32-character random token
   const token = crypto.randomBytes(16).toString('hex');
   qrTokens[token] = { valid: true, createdAt: Date.now() };
 
@@ -399,7 +398,7 @@ router.get('/qr-generate', (req, res) => {
 // =======================
 // Mobile scans QR token
 // =======================
-router.post('/qr-scan', verifyJWT, (req, res) => {
+router.post('/qr-scan', verifyJWT, async (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'Missing QR token' });
 
@@ -408,18 +407,44 @@ router.post('/qr-scan', verifyJWT, (req, res) => {
     return res.status(400).json({ error: 'Invalid or expired QR token' });
   }
 
-  qrEntry.valid = false; // mark as used
+  qrEntry.valid = false; // mark token as used
 
-  // Emit login-success to desktop via Socket.IO
-  if (global.io) {
-    global.io.to(token).emit('login-success', {
-      userId: req.user.id,
-      email: req.user.email,
-      discordUsername: req.user.discordUsername,
-    });
+  try {
+    // Fetch full user info from DB
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Create JWT for desktop
+    const desktopToken = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        discordUsername: user.discordUsername,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Emit login-success to desktop via Socket.IO
+    if (global.io) {
+      global.io.to(token).emit('login-success', {
+        token: desktopToken,
+        user: {
+          id: user._id,
+          email: user.email,
+          discordUsername: user.discordUsername,
+          role: user.role
+        }
+      });
+    }
+
+    res.json({ success: true, message: 'QR login approved' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
   }
-
-  res.json({ success: true, message: 'QR login approved' });
 });
 
 // =======================
@@ -441,4 +466,5 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
