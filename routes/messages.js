@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const Chat = require('../models/Chat');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
@@ -9,7 +10,7 @@ const auth = require('../middleware/auth');
 function mapUserWithBadge(user) {
   return {
     _id: user._id,
-    username: user.username, // updated to 'username' for frontend consistency
+    username: user.username || user.discordUsername, // for frontend consistency
     role: user.role,
     badge: user.role === 'admin' ? '[OPSLINK STAFF]' : null
   };
@@ -21,9 +22,7 @@ function mapUserWithBadge(user) {
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const chats = await Chat.find({
-      participants: req.user._id
-    })
+    const chats = await Chat.find({ participants: req.user._id })
       .populate('participants', 'username role')
       .sort({ updatedAt: -1 });
 
@@ -36,27 +35,25 @@ router.get('/', auth, async (req, res) => {
       }))
     );
   } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
+    console.error('Error fetching chats:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
 /**
  * POST /api/messages/start
- * Start (or reuse) chat by username
+ * Start (or reuse) chat by discordUsername
  */
 router.post('/start', auth, async (req, res) => {
   try {
-    const { username } = req.body; // frontend now sends 'username'
-    if (!username?.trim()) return res.sendStatus(400);
+    const { discordUsername } = req.body;
+    if (!discordUsername?.trim()) return res.status(400).json({ error: 'discordUsername required' });
 
-    const target = await User.findOne({ username: username.trim() });
+    const target = await User.findOne({ username: discordUsername.trim() });
     if (!target) return res.status(404).json({ error: 'User not found' });
 
-    // Prevent chatting with yourself
-    if (target._id.equals(req.user._id)) {
+    if (target._id.equals(req.user._id))
       return res.status(400).json({ error: 'You cannot message yourself' });
-    }
 
     let chat = await Chat.findOne({
       participants: { $all: [req.user._id, target._id] }
@@ -71,8 +68,8 @@ router.post('/start', auth, async (req, res) => {
 
     res.json({ chatId: chat._id });
   } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
+    console.error('Error starting chat:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -82,14 +79,16 @@ router.post('/start', auth, async (req, res) => {
  */
 router.get('/:id', auth, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid chat ID' });
+
     const chat = await Chat.findById(req.params.id)
       .populate('participants', 'username role')
       .populate('messages.sender', 'username role');
 
-    if (!chat) return res.sendStatus(404);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
 
     const isParticipant = chat.participants.some(p => p._id.equals(req.user._id));
-    if (!isParticipant) return res.sendStatus(403);
+    if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
 
     const participants = chat.participants.map(mapUserWithBadge);
     const messages = chat.messages.map(m => ({
@@ -99,10 +98,10 @@ router.get('/:id', auth, async (req, res) => {
       createdAt: m.createdAt
     }));
 
-    res.json({ ...chat.toObject(), participants, messages });
+    res.json({ _id: chat._id, participants, messages, updatedAt: chat.updatedAt });
   } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
+    console.error('Error loading chat:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -113,27 +112,30 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/:id', auth, async (req, res) => {
   try {
     const { content } = req.body;
-    if (!content?.trim()) return res.sendStatus(400);
+    if (!content?.trim()) return res.status(400).json({ error: 'Message content required' });
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid chat ID' });
 
     const chat = await Chat.findById(req.params.id);
-    if (!chat) return res.sendStatus(404);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
 
     const isParticipant = chat.participants.some(id => id.equals(req.user._id));
-    if (!isParticipant) return res.sendStatus(403);
+    if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
 
-    chat.messages.push({
+    const message = {
       sender: req.user._id,
       content: content.trim(),
       createdAt: new Date()
-    });
+    };
 
+    chat.messages.push(message);
     chat.updatedAt = new Date();
     await chat.save();
 
-    res.sendStatus(200);
+    res.status(200).json({ message: 'Message sent' });
   } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
+    console.error('Error sending message:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
