@@ -3,7 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const http = require('http');           // <-- needed for Socket.IO
+const http = require('http');
 const { Server } = require('socket.io');
 
 // --------------------
@@ -33,7 +33,7 @@ app.use(cors({
     console.warn('❌ Blocked by CORS:', origin);
     return callback(new Error('CORS not allowed'), false);
   },
-  methods: ['GET','POST','PATCH','DELETE','OPTIONS'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 }));
 
@@ -63,6 +63,7 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
+
 // --------------------
 // Health check
 // --------------------
@@ -92,20 +93,20 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
-    methods: ['GET','POST'],
-    credentials: true
+    methods: ['GET', 'POST'],
+    credentials: true,
   },
-  path: '/socket.io', // <-- important, matches frontend default
+  path: '/socket.io',
 });
 
-global.io = io; // make io globally accessible for QR routes
+global.io = io; // for QR / auth routes
 
 io.on('connection', socket => {
   console.log('Socket connected:', socket.id);
 
   socket.on('subscribe-token', token => {
     socket.join(token);
-    console.log(Socket ${socket.id} subscribed to token ${token});
+    console.log(`Socket ${socket.id} subscribed to token ${token}`);
   });
 
   socket.on('disconnect', () => {
@@ -116,5 +117,6 @@ io.on('connection', socket => {
 // --------------------
 // Start server
 // --------------------
-server.listen(PORT, () => console.log(Server running on port ${PORT}));
-
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
