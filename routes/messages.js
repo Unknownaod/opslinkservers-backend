@@ -9,7 +9,7 @@ const auth = require('../middleware/auth');
 function mapUserWithBadge(user) {
   return {
     _id: user._id,
-    discordUsername: user.discordUsername,
+    username: user.username, // updated to 'username' for frontend consistency
     role: user.role,
     badge: user.role === 'admin' ? '[OPSLINK STAFF]' : null
   };
@@ -24,7 +24,7 @@ router.get('/', auth, async (req, res) => {
     const chats = await Chat.find({
       participants: req.user._id
     })
-      .populate('participants', 'discordUsername role')
+      .populate('participants', 'username role')
       .sort({ updatedAt: -1 });
 
     res.json(
@@ -43,14 +43,14 @@ router.get('/', auth, async (req, res) => {
 
 /**
  * POST /api/messages/start
- * Start (or reuse) chat by discordUsername
+ * Start (or reuse) chat by username
  */
 router.post('/start', auth, async (req, res) => {
   try {
-    const { discordUsername } = req.body;
-    if (!discordUsername?.trim()) return res.sendStatus(400);
+    const { username } = req.body; // frontend now sends 'username'
+    if (!username?.trim()) return res.sendStatus(400);
 
-    const target = await User.findOne({ discordUsername: discordUsername.trim() });
+    const target = await User.findOne({ username: username.trim() });
     if (!target) return res.status(404).json({ error: 'User not found' });
 
     // Prevent chatting with yourself
@@ -83,8 +83,8 @@ router.post('/start', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const chat = await Chat.findById(req.params.id)
-      .populate('participants', 'discordUsername role')
-      .populate('messages.sender', 'discordUsername role');
+      .populate('participants', 'username role')
+      .populate('messages.sender', 'username role');
 
     if (!chat) return res.sendStatus(404);
 
