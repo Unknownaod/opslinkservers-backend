@@ -9,7 +9,6 @@ const editRequestSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-
   changes: {
     description: String,
     logo: String,
@@ -20,14 +19,12 @@ const editRequestSchema = new mongoose.Schema({
     nsfw: Boolean,
     tags: [String]
   },
-
   status: {
     type: String,
     enum: ['pending', 'approved', 'denied'],
     default: 'pending',
     index: true
   },
-
   createdAt: {
     type: Date,
     default: Date.now
@@ -102,7 +99,18 @@ const serverSchema = new mongoose.Schema({
   editRequests: {
     type: [editRequestSchema],
     default: []
-  }
+  },
+
+  // ✅ Add reviews here
+  reviews: [
+    {
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      username: { type: String, required: true },      // store username at the time of review
+      rating: { type: Number, min: 1, max: 5, required: true },
+      comment: { type: String, maxlength: 1024 },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ]
 
 }, { timestamps: true });
 
