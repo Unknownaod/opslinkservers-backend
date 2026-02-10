@@ -351,4 +351,54 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
+// --------------------
+// GET all reviews for a server
+// --------------------
+router.get('/:id/reviews', async (req, res) => {
+  try {
+    const server = await Server.findById(req.params.id).select('reviews');
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+    res.json(server.reviews);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// --------------------
+// POST a review
+// --------------------
+router.post('/:id/reviews', auth, async (req, res) => {
+  const { rating, comment } = req.body;
+  if (!rating || rating < 1 || rating > 5) 
+    return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+
+  try {
+    const server = await Server.findById(req.params.id);
+    if (!server) return res.status(404).json({ error: 'Server not found' });
+
+    // Prevent duplicate review by same user
+    const existing = server.reviews.find(r => r.user.toString() === req.user._id.toString());
+    if (existing) return res.status(400).json({ error: 'You have already reviewed this server' });
+
+    const newReview = {
+      user: req.user._id,
+      username: req.user.username || req.user.discordUsername || 'Unknown',
+      rating,
+      comment
+    };
+
+    server.reviews.push(newReview);
+    await server.save();
+
+    res.status(201).json(newReview);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
 module.exports = router;
+
