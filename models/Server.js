@@ -102,15 +102,14 @@ const serverSchema = new mongoose.Schema({
   },
 
   // ✅ Add reviews here
-  reviews: [
-    {
-      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-      username: { type: String, required: true },      // store username at the time of review
-      rating: { type: Number, min: 1, max: 5, required: true },
-      comment: { type: String, maxlength: 1024 },
-      createdAt: { type: Date, default: Date.now }
-    }
-  ]
+reviews: [
+  {
+    discordUsername: { type: String, required: true }, // store Discord username at the time of review
+    rating: { type: Number, min: 1, max: 5, required: true },
+    comment: { type: String, maxlength: 1024 },
+    createdAt: { type: Date, default: Date.now }
+  }
+]
 
 }, { timestamps: true });
 
@@ -123,3 +122,4 @@ serverSchema.index({ discordServerId: 1 });
 serverSchema.index({ 'editRequests.status': 1 });
 
 module.exports = mongoose.model('Server', serverSchema);
+
