@@ -366,8 +366,8 @@ router.post('/:id/reviews', auth, async (req, res) => {
     const server = await Server.findById(req.params.id);
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Check if the user already reviewed this server
-    const existingReview = server.reviews?.find(r => r.user.toString() === req.user._id.toString());
+    // Check if the user already reviewed this server by discordUsername
+    const existingReview = server.reviews?.find(r => r.discordUsername === req.user.discordUsername);
     if (existingReview) {
       // Update existing review
       existingReview.rating = rating;
@@ -376,10 +376,10 @@ router.post('/:id/reviews', auth, async (req, res) => {
     } else {
       // Add new review
       const newReview = {
-        user: req.user._id,
-        username: req.user.discordUsername,
+        discordUsername: req.user.discordUsername, // store Discord username
         rating,
-        comment: comment || ''
+        comment: comment || '',
+        createdAt: new Date()
       };
       server.reviews = server.reviews || [];
       server.reviews.push(newReview);
@@ -393,7 +393,9 @@ router.post('/:id/reviews', auth, async (req, res) => {
   }
 });
 
+// ================================
 // GET all reviews for a server
+// ================================
 router.get('/:id/reviews', async (req, res) => {
   try {
     const server = await Server.findById(req.params.id).select('reviews');
@@ -408,5 +410,6 @@ router.get('/:id/reviews', async (req, res) => {
 
 
 module.exports = router;
+
 
 
