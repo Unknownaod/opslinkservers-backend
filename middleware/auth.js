@@ -37,7 +37,18 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    req.user = user;
+    // Attach user info and shareable ID/token to req.user
+    req.user = {
+      _id: user._id,          // Shareable user ID
+      email: user.email,      // Optional: show only if needed
+      discordUsername: user.discordUsername,
+      discordTag: user.discordTag,
+      role: user.role,
+      isVerified: user.isVerified,
+      tokenVersion: user.tokenVersion,
+      token: token            // Keep the raw token if you want
+    };
+
     next();
 
   } catch (err) {
