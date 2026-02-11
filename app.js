@@ -12,6 +12,7 @@ const { Server } = require('socket.io');
 const authRoutes = require('./routes/auth');
 const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
+const profileRoutes = require('./routes/profile');
 
 const app = express();
 
@@ -63,6 +64,7 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/profile', profileRoutes);
 
 // --------------------
 // Health check
@@ -120,3 +122,4 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
