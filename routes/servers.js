@@ -408,8 +408,23 @@ router.get('/:id/reviews', async (req, res) => {
   }
 });
 
+// ------------------------
+// GET ROLE OF USER
+// ------------------------
+router.get('/role/:discordUserID', async (req, res) => {
+  const { discordUserID } = req.params;
+  try {
+    const user = await User.findOne({ discordUserID }).select('role');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ role: user.role });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 module.exports = router;
+
 
 
 
