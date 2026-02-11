@@ -14,49 +14,38 @@ router.get('/:id?', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get the requester
-    const requester = await User.findById(req.user.id).lean();
-    if (!requester) return res.status(404).json({ message: 'Requester not found' });
+    // The requester (logged-in user)
+    const requester = req.user; // Already processed by auth middleware
+    if (!requester) return res.status(401).json({ message: 'Unauthorized' });
 
     let user;
-    if (!id || id === requester._id.toString()) {
+    if (!id || id === requester._id) {
       // Fetch self
-      user = requester;
+      user = await User.findById(requester._id).lean();
+      if (!user) return res.status(404).json({ message: 'User not found' });
     } else {
       // Fetch another user
       user = await User.findById(id).lean();
       if (!user) return res.status(404).json({ message: 'User not found' });
     }
 
-    // Decide what fields to return
-    let response;
-    if (requester.role === 'admin') {
-      // Admin sees almost everything except sensitive tokens/passwords
-      response = {
-        email: user.email,
-        discordUsername: user.discordUsername,
-        discordTag: user.discordTag,
-        discordUserID: user.discordUserID,
-        role: user.role,
-        isVerified: user.isVerified,
-        tokenVersion: user.tokenVersion,
-      };
-    } else if (!id || id === requester._id.toString()) {
-      // Normal user fetching self → limited sensitive info
-      response = {
-        email: user.email,
-        discordUsername: user.discordUsername,
-        discordTag: user.discordTag,
-        role: user.role,
-        isVerified: user.isVerified,
-      };
+    // Decide which fields to return
+    let response = { _id: user._id }; // always include _id for shareable link
+
+    if (requester.role === 'admin' || (!id || id === requester._id)) {
+      // Admins or self → full profile (safe)
+      response.email = user.email;
+      response.discordUsername = user.discordUsername;
+      response.discordTag = user.discordTag;
+      response.discordUserID = user.discordUserID;
+      response.role = user.role;
+      response.isVerified = user.isVerified;
+      // optionally include other non-sensitive info if needed
     } else {
       // Normal user fetching someone else → only public info
-      response = {
-        discordUsername: user.discordUsername,
-        discordTag: user.discordTag,
-        role: user.role,
-      };
+      response.discordUsername = user.discordUsername;
+      response.discordTag = user.discordTag;
+      response.role = user.role;
     }
 
     res.json(response);
