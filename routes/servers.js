@@ -6,6 +6,7 @@ const adminAuth = require('../middleware/adminAuth');
 const Server = require('../models/Server');
 const Comment = require('../models/Comment');
 const sendDiscordNotification = require('../utils/discordWebhook');
+const User = require('../models/User'); // adjust the path if needed
 
 const router = express.Router();
 
@@ -412,23 +413,26 @@ router.get('/:id/reviews', async (req, res) => {
 // GET ROLE OF USER BY DISCORD USERNAME
 // ------------------------
 router.get('/role/:discordUsername', async (req, res) => {
-  const { discordUsername } = req.params;
-
   try {
-    // Find user by Discord username only and select role
-    const user = await User.findOne({ discordUsername }).select('role');
+    const { discordUsername } = req.params;
+    if (!discordUsername) return res.status(400).json({ error: 'Missing Discord username' });
+
+    const username = decodeURIComponent(discordUsername);
+    const user = await User.findOne({ discordUsername: username }).select('role');
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     res.json({ role: user.role });
   } catch (err) {
-    console.error(err);
+    console.error('Role fetch error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
 
+
 module.exports = router;
+
 
 
 
