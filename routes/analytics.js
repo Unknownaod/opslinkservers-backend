@@ -1,8 +1,7 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const Server = require('../models/Server');
 const Snapshot = require('../models/Snapshot');
+const Server = require('../models/Server'); // optional, for server name/logo
 
 const router = express.Router();
 
@@ -11,7 +10,7 @@ const router = express.Router();
 // ---------------------------
 function parseRange(range) {
   const now = new Date();
-  let since = new Date(now);
+  const since = new Date(now);
 
   const ranges = {
     '24h': 24,
@@ -26,39 +25,30 @@ function parseRange(range) {
 }
 
 // ---------------------------
-// GET analytics for a server
+// GET analytics for a server by Discord server ID
 // ---------------------------
-router.get('/:serverId', auth, async (req, res) => {
+router.get('/:discordServerId', auth, async (req, res) => {
   try {
-    const { serverId } = req.params;
+    const { discordServerId } = req.params;
     const range = req.query.range || '7d';
     const since = parseRange(range);
 
-    if (!serverId) return res.status(400).json({ error: 'Invalid server ID' });
+    if (!discordServerId) return res.status(400).json({ error: 'Invalid Discord server ID' });
 
     // ---------------------------
-    // 1️⃣ Check server exists
-    // ---------------------------
-    let server;
-    try {
-      server = await Server.findById(serverId).lean();
-    } catch (err) {
-      return res.status(400).json({ error: 'Invalid server ID format' });
-    }
-
-    if (!server) return res.status(404).json({ error: 'Server not found' });
-
-    // ---------------------------
-    // 2️⃣ Fetch snapshots
+    // 1️⃣ Fetch the snapshots
     // ---------------------------
     const snapshots = await Snapshot.find({
-      serverId,
+      serverId: discordServerId, // directly query by Discord server ID
       createdAt: { $gte: since }
     }).sort({ createdAt: 1 }).lean();
 
+    // ---------------------------
+    // 2️⃣ Handle no snapshots
+    // ---------------------------
     if (!snapshots.length) {
       return res.json({
-        serverName: server.name || 'Unknown',
+        serverName: 'Unknown',
         members: { current: 0, delta: 0 },
         messages: { current: 0, delta: 0 },
         voice: { current: 0, delta: 0 },
@@ -84,12 +74,11 @@ router.get('/:serverId', auth, async (req, res) => {
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
     res.json({
-      serverName: server.name || 'Unknown',
-
+      serverName: latest.serverName || 'Unknown', // optional if stored in snapshot
       members: { current: latest.members?.current || 0, delta: delta('members') },
       messages: { current: latest.messages?.current || 0, delta: delta('messages') },
       voice: { current: latest.voice?.current || 0, delta: delta('voice') },
-      joins: { current: latest.joins || 0, delta: delta('joins') },
+      joins: { current: latest.joins?.current || 0, delta: delta('joins') },
 
       textChannelsCount: latest.textChannelsCount || 0,
       voiceChannelsCount: latest.voiceChannelsCount || 0,
