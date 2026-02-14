@@ -12,13 +12,17 @@ const router = express.Router();
 function parseRange(range) {
   const now = new Date();
   let since = new Date(now);
-  switch (range) {
-    case '24h': since.setHours(now.getHours() - 24); break;
-    case '7d': since.setDate(now.getDate() - 7); break;
-    case '30d': since.setDate(now.getDate() - 30); break;
-    case '90d': since.setDate(now.getDate() - 90); break;
-    default: since.setDate(now.getDate() - 7);
-  }
+
+  // Simplified range parsing
+  const ranges = {
+    '24h': 24,
+    '7d': 7,
+    '30d': 30,
+    '90d': 90
+  };
+
+  const hoursAgo = ranges[range] || 7; // default to '7d' if invalid range
+  since.setHours(now.getHours() - hoursAgo * 24);
   return since;
 }
 
@@ -39,7 +43,7 @@ router.get('/:serverId', auth, async (req, res) => {
     let server;
     try {
       server = await Server.findById(serverId).lean();
-    } catch {
+    } catch (err) {
       return res.status(400).json({ error: 'Invalid server ID format' });
     }
 
@@ -48,11 +52,15 @@ router.get('/:serverId', auth, async (req, res) => {
     // ---------------------------
     // 2️⃣ Fetch snapshots
     // ---------------------------
-    const snapshots = await Snapshot.find({
-      serverId,
-      range,
-      createdAt: { $gte: since }
-    }).sort({ createdAt: 1 }).lean();
+    let snapshots;
+    try {
+      snapshots = await Snapshot.find({
+        serverId,
+        createdAt: { $gte: since }
+      }).sort({ createdAt: 1 }).lean();
+    } catch (err) {
+      return res.status(500).json({ error: 'Error fetching snapshots' });
+    }
 
     // If no snapshots exist, return empty/default data
     if (!snapshots.length) {
@@ -76,6 +84,7 @@ router.get('/:serverId', auth, async (req, res) => {
 
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
+    // Top channels and members
     const topChannels = (latest.topChannels || []).slice(0, 5).map(c => ({
       name: c.name || 'Unknown',
       count: c.count || 0
@@ -86,6 +95,7 @@ router.get('/:serverId', auth, async (req, res) => {
       count: m.count || 0
     }));
 
+    // Return aggregated data
     res.json({
       serverName: server.name || 'Unknown',
       members: { current: latest.members?.current || 0, delta: delta('members') },
@@ -104,3 +114,4 @@ router.get('/:serverId', auth, async (req, res) => {
 });
 
 module.exports = router;
+
