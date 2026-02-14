@@ -14,7 +14,7 @@ const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/user');
-const analyticRoutes = require('./routes/analytics'); // we'll pass the connection
+const analyticRoutes = require('./routes/analytics'); // will use default connection
 
 const app = express();
 
@@ -52,34 +52,22 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // --------------------
-// MongoDB Connections
+// MongoDB Connection
 // --------------------
-
-// 1️⃣ Default DB (main app)
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => console.log('✅ MongoDB (main) connected'))
+  .then(() => console.log('✅ MongoDB connected'))
   .catch(err => {
-    console.error('❌ MongoDB (main) connection error:', err);
+    console.error('❌ MongoDB connection error:', err);
     process.exit(1);
   });
 
-// 2️⃣ Analytics DB (separate connection)
-const analyticsConnection = mongoose.createConnection(process.env.MongoDb_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-analyticsConnection.on('connected', () => console.log('✅ MongoDB (analytics) connected'));
-analyticsConnection.on('error', (err) => console.error('❌ MongoDB (analytics) connection error:', err));
-
-// Pass this connection to your analytics route
-app.use('/api/analytics', (req, res, next) => {
-  req.analyticsDb = analyticsConnection;
-  next();
-}, analyticRoutes);
+// --------------------
+// Analytics route uses default connection
+// --------------------
+app.use('/api/analytics', analyticRoutes);
 
 // --------------------
 // Other Routes
