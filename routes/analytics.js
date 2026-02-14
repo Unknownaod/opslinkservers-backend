@@ -1,19 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const Server = require('../models/Server');
 
 const router = express.Router();
-
-// ============================
-// Connect to MongoDb_URI
-// ============================
-mongoose.connect(process.env.MongoDb_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('Connected to analytics MongoDb_URI'))
-.catch(err => console.error('MongoDb_URI connection error:', err));
 
 // ============================
 // Utility: parse range
@@ -40,10 +29,16 @@ router.get('/:serverId', auth, async (req, res) => {
     const range = req.query.range || '7d';
     const since = parseRange(range);
 
+    const analyticsDb = req.analyticsDb; // ✅ analytics connection
+    if (!analyticsDb) return res.status(500).json({ error: 'Analytics DB not connected' });
+
+    // Create model on the fly with the connection
+    const ServerModel = analyticsDb.model('Server', new mongoose.Schema({}, { strict: false }));
+
     if (!mongoose.Types.ObjectId.isValid(serverId)) 
       return res.status(400).json({ error: 'Invalid server ID' });
 
-    const server = await Server.findById(serverId).lean();
+    const server = await ServerModel.findById(serverId).lean();
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
     // Placeholder analytics (replace with real logs later)
