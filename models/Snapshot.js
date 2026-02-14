@@ -24,6 +24,13 @@ const SnapshotSchema = new mongoose.Schema({
     delta: Number
   },
 
+  textChannelsCount: Number,   // new
+  voiceChannelsCount: Number,  // new
+  rolesCount: Number,          // new
+  emojisCount: Number,         // new
+  boosts: Number,              // new
+  afkMembers: Number,          // new
+
   chart: {
     labels: [String],
     data: [Number]
