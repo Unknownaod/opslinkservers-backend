@@ -34,10 +34,11 @@ router.get('/:discordServerId', auth, async (req, res) => {
     const topN = parseInt(req.query.top) || 5; // allow configurable top N
     const since = parseRange(range);
 
-    if (!discordServerId) return res.status(400).json({ error: 'Invalid Discord server ID' });
+    if (!discordServerId)
+      return res.status(400).json({ error: 'Invalid Discord server ID' });
 
     // ---------------------------
-    // 1️⃣ Fetch snapshots
+    // 1️⃣ Fetch snapshots in range
     // ---------------------------
     const snapshots = await Snapshot.find({
       serverId: discordServerId,
@@ -45,7 +46,7 @@ router.get('/:discordServerId', auth, async (req, res) => {
     }).sort({ createdAt: 1 }).lean();
 
     // ---------------------------
-    // 2️⃣ Handle no snapshots
+    // 2️⃣ Handle no snapshots at all
     // ---------------------------
     if (!snapshots.length) {
       return res.json({
@@ -70,7 +71,16 @@ router.get('/:discordServerId', auth, async (req, res) => {
     // 3️⃣ Aggregate latest snapshot
     // ---------------------------
     const latest = snapshots[snapshots.length - 1];
-    const prev = snapshots[snapshots.length - 2] || latest;
+
+    // Try to get the previous snapshot in range
+    let prev = snapshots[snapshots.length - 2];
+    // If it doesn't exist, get the last snapshot before the range
+    if (!prev) {
+      prev = await Snapshot.findOne({
+        serverId: discordServerId,
+        createdAt: { $lt: since }
+      }).sort({ createdAt: -1 }).lean() || latest; // fallback to latest in range
+    }
 
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
@@ -97,18 +107,12 @@ router.get('/:discordServerId', auth, async (req, res) => {
     const topChannels = (latest.topChannels || [])
       .sort((a, b) => (b.count || 0) - (a.count || 0))
       .slice(0, topN)
-      .map(c => ({
-        name: c.name || 'Unknown',
-        count: c.count || 0
-      }));
+      .map(c => ({ name: c.name || 'Unknown', count: c.count || 0 }));
 
     const topMembers = (latest.topMembers || [])
       .sort((a, b) => (b.activityScore || 0) - (a.activityScore || 0))
       .slice(0, topN)
-      .map(m => ({
-        name: m.name || 'Unknown',
-        activityScore: m.activityScore || 0
-      }));
+      .map(m => ({ name: m.name || 'Unknown', activityScore: m.activityScore || 0 }));
 
     res.json({
       serverName: latest.serverName || 'Unknown',
