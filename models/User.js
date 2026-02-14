@@ -10,9 +10,14 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['user','admin'], default: 'user' },
 
   // =========================
+  // Premium flag
+  // =========================
+  isPremium: { type: Boolean, default: false },
+
+  // =========================
   // Email verification fields
   // =========================
-  isVerified: { type: Boolean, default: true }, // Existing users automatically verified
+  isVerified: { type: Boolean, default: true },
   emailVerificationToken: { type: String },
   emailVerificationExpires: { type: Date },
 
