@@ -14,6 +14,7 @@ const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/user');
+const analyticRoutes = require('./routes/analytics');
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/analytics', analyticRoutes);
 
 // --------------------
 // Health check
@@ -125,6 +127,7 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 
 
 
