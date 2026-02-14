@@ -1,12 +1,13 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const auth = require('../middleware/auth');
+import express from 'express';
+import auth from '../middleware/auth.js';
+import Snapshot from '../models/Snapshot.js';
+import Server from '../models/Server.js';
 
 const router = express.Router();
 
-// ============================
-// Utility: parse range
-// ============================
+// ---------------------------
+// Utility to parse range
+// ---------------------------
 function parseRange(range) {
   const now = new Date();
   let since = new Date(now);
@@ -20,56 +21,68 @@ function parseRange(range) {
   return since;
 }
 
-// ============================
+// ---------------------------
 // GET analytics for a server
-// ============================
+// ---------------------------
 router.get('/:serverId', auth, async (req, res) => {
   try {
     const { serverId } = req.params;
     const range = req.query.range || '7d';
     const since = parseRange(range);
 
-    if (!serverId) 
-      return res.status(400).json({ error: 'Invalid server ID' });
+    if (!serverId) return res.status(400).json({ error: 'Invalid server ID' });
 
-    // ----------------------------
-    // 1️⃣ Check if server exists in Servers collection
-    // ----------------------------
-    const ServerModel = mongoose.model('Server', new mongoose.Schema({}, { strict: false }));
-    const server = await ServerModel.findById(serverId).lean();
+    // ---------------------------
+    // 1️⃣ Check server exists
+    // ---------------------------
+    let server;
+    try {
+      server = await Server.findById(serverId).lean();
+    } catch {
+      return res.status(400).json({ error: 'Invalid server ID format' });
+    }
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // ----------------------------
-    // 2️⃣ Fetch snapshots for this server
-    // ----------------------------
-    const Snapshot = mongoose.model('Snapshot', new mongoose.Schema({}, { strict: false }));
+    // ---------------------------
+    // 2️⃣ Fetch snapshots
+    // ---------------------------
     const snapshots = await Snapshot.find({
       serverId,
       range,
       createdAt: { $gte: since }
     }).sort({ createdAt: 1 }).lean();
 
-    if (!snapshots.length) return res.status(404).json({ error: 'No snapshots found for this server' });
+    // If no snapshots exist, return default empty data
+    if (!snapshots.length) {
+      return res.json({
+        serverName: server.name || 'Unknown',
+        members: { current: 0, delta: 0 },
+        messages: { current: 0, delta: 0 },
+        voice: { current: 0, delta: 0 },
+        joins: { current: 0, delta: 0 },
+        topChannels: [],
+        topMembers: [],
+        chart: { labels: [], data: [] }
+      });
+    }
 
-    // ----------------------------
-    // 3️⃣ Aggregate data for response
-    // ----------------------------
     const latest = snapshots[snapshots.length - 1];
     const prev = snapshots[snapshots.length - 2] || latest;
 
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
     const topChannels = (latest.topChannels || []).slice(0, 5).map(c => ({
-      name: c.name,
-      count: c.count
+      name: c.name || 'Unknown',
+      count: c.count || 0
     }));
+
     const topMembers = (latest.topMembers || []).slice(0, 5).map(m => ({
-      name: m.name,
-      count: m.count
+      name: m.name || 'Unknown',
+      count: m.count || 0
     }));
 
     res.json({
-      serverName: server.name || 'Unknown', // include server name from Servers collection
+      serverName: server.name || 'Unknown',
       members: { current: latest.members?.current || 0, delta: delta('members') },
       messages: { current: latest.messages?.current || 0, delta: delta('messages') },
       voice: { current: latest.voice?.current || 0, delta: delta('voice') },
@@ -80,9 +93,9 @@ router.get('/:serverId', auth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Analytics fetch error:', err);
+    console.error('Analytics fetch error:', err.stack || err);
     res.status(500).json({ error: 'Failed to fetch analytics' });
   }
 });
 
-module.exports = router;
+export default router;
