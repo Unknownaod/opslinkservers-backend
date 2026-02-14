@@ -139,4 +139,39 @@ router.get('/:discordServerId', auth, async (req, res) => {
   }
 });
 
+// ---------------------------
+// DELETE snapshots for a server
+// ---------------------------
+router.delete('/:discordServerId/snapshots', auth, async (req, res) => {
+  try {
+    const { discordServerId } = req.params;
+    const { range } = req.query; // optional: 24h, 7d, 30d, 90d, or "all"
+
+    // Only allow server admins
+    if (!req.user.isAdminOf(discordServerId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    let filter = { serverId: discordServerId };
+
+    if (range && range !== 'all') {
+      const since = parseRange(range);
+      filter.createdAt = { $gte: since };
+    }
+
+    const result = await Snapshot.deleteMany(filter);
+
+    res.json({
+      success: true,
+      message: range === 'all'
+        ? 'All snapshots deleted.'
+        : `Deleted ${result.deletedCount} snapshots from range: ${range || 'unspecified'}.`
+    });
+  } catch (err) {
+    console.error('Snapshot deletion error:', err);
+    res.status(500).json({ error: 'Failed to delete snapshots' });
+  }
+});
+
+
 module.exports = router;
