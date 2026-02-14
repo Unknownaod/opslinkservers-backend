@@ -1,7 +1,8 @@
-import express from 'express';
-import auth from '../middleware/auth.js';
-import Snapshot from '../models/Snapshot.js';
-import Server from '../models/Server.js';
+const express = require('express');
+const mongoose = require('mongoose');
+const auth = require('../middleware/auth');
+const Server = require('../models/Server');
+const Snapshot = require('../models/Snapshot');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const router = express.Router();
 function parseRange(range) {
   const now = new Date();
   let since = new Date(now);
-  switch(range) {
+  switch (range) {
     case '24h': since.setHours(now.getHours() - 24); break;
     case '7d': since.setDate(now.getDate() - 7); break;
     case '30d': since.setDate(now.getDate() - 30); break;
@@ -41,6 +42,7 @@ router.get('/:serverId', auth, async (req, res) => {
     } catch {
       return res.status(400).json({ error: 'Invalid server ID format' });
     }
+
     if (!server) return res.status(404).json({ error: 'Server not found' });
 
     // ---------------------------
@@ -52,7 +54,7 @@ router.get('/:serverId', auth, async (req, res) => {
       createdAt: { $gte: since }
     }).sort({ createdAt: 1 }).lean();
 
-    // If no snapshots exist, return default empty data
+    // If no snapshots exist, return empty/default data
     if (!snapshots.length) {
       return res.json({
         serverName: server.name || 'Unknown',
@@ -66,6 +68,9 @@ router.get('/:serverId', auth, async (req, res) => {
       });
     }
 
+    // ---------------------------
+    // 3️⃣ Aggregate latest snapshot
+    // ---------------------------
     const latest = snapshots[snapshots.length - 1];
     const prev = snapshots[snapshots.length - 2] || latest;
 
@@ -98,4 +103,4 @@ router.get('/:serverId', auth, async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
