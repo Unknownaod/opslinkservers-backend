@@ -13,16 +13,15 @@ function parseRange(range) {
   const now = new Date();
   let since = new Date(now);
 
-  // Simplified range parsing
   const ranges = {
     '24h': 24,
-    '7d': 7,
-    '30d': 30,
-    '90d': 90
+    '7d': 7 * 24,
+    '30d': 30 * 24,
+    '90d': 90 * 24
   };
 
-  const hoursAgo = ranges[range] || 7; // default to '7d' if invalid range
-  since.setHours(now.getHours() - hoursAgo * 24);
+  const hoursAgo = ranges[range] || ranges['7d'];
+  since.setHours(now.getHours() - hoursAgo);
   return since;
 }
 
@@ -52,17 +51,11 @@ router.get('/:serverId', auth, async (req, res) => {
     // ---------------------------
     // 2️⃣ Fetch snapshots
     // ---------------------------
-    let snapshots;
-    try {
-      snapshots = await Snapshot.find({
-        serverId,
-        createdAt: { $gte: since }
-      }).sort({ createdAt: 1 }).lean();
-    } catch (err) {
-      return res.status(500).json({ error: 'Error fetching snapshots' });
-    }
+    const snapshots = await Snapshot.find({
+      serverId,
+      createdAt: { $gte: since }
+    }).sort({ createdAt: 1 }).lean();
 
-    // If no snapshots exist, return empty/default data
     if (!snapshots.length) {
       return res.json({
         serverName: server.name || 'Unknown',
@@ -70,6 +63,12 @@ router.get('/:serverId', auth, async (req, res) => {
         messages: { current: 0, delta: 0 },
         voice: { current: 0, delta: 0 },
         joins: { current: 0, delta: 0 },
+        textChannelsCount: 0,
+        voiceChannelsCount: 0,
+        rolesCount: 0,
+        emojisCount: 0,
+        boosts: 0,
+        afkMembers: 0,
         topChannels: [],
         topMembers: [],
         chart: { labels: [], data: [] }
@@ -84,26 +83,31 @@ router.get('/:serverId', auth, async (req, res) => {
 
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
-    // Top channels and members
-    const topChannels = (latest.topChannels || []).slice(0, 5).map(c => ({
-      name: c.name || 'Unknown',
-      count: c.count || 0
-    }));
-
-    const topMembers = (latest.topMembers || []).slice(0, 5).map(m => ({
-      name: m.name || 'Unknown',
-      count: m.count || 0
-    }));
-
-    // Return aggregated data
     res.json({
       serverName: server.name || 'Unknown',
+
       members: { current: latest.members?.current || 0, delta: delta('members') },
       messages: { current: latest.messages?.current || 0, delta: delta('messages') },
       voice: { current: latest.voice?.current || 0, delta: delta('voice') },
       joins: { current: latest.joins || 0, delta: delta('joins') },
-      topChannels,
-      topMembers,
+
+      textChannelsCount: latest.textChannelsCount || 0,
+      voiceChannelsCount: latest.voiceChannelsCount || 0,
+      rolesCount: latest.rolesCount || 0,
+      emojisCount: latest.emojisCount || 0,
+      boosts: latest.boosts || 0,
+      afkMembers: latest.afkMembers || 0,
+
+      topChannels: (latest.topChannels || []).slice(0, 5).map(c => ({
+        name: c.name || 'Unknown',
+        count: c.count || 0
+      })),
+
+      topMembers: (latest.topMembers || []).slice(0, 5).map(m => ({
+        name: m.name || 'Unknown',
+        count: m.count || 0
+      })),
+
       chart: latest.chart || { labels: [], data: [] }
     });
 
@@ -114,4 +118,3 @@ router.get('/:serverId', auth, async (req, res) => {
 });
 
 module.exports = router;
-
