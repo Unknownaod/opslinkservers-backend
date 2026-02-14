@@ -32,27 +32,33 @@ router.get('/:serverId', auth, async (req, res) => {
     if (!serverId) 
       return res.status(400).json({ error: 'Invalid server ID' });
 
-    // Use default mongoose connection and Snapshots collection
-    const Snapshot = mongoose.model('Snapshot', new mongoose.Schema({}, { strict: false }));
+    // ----------------------------
+    // 1️⃣ Check if server exists in Servers collection
+    // ----------------------------
+    const ServerModel = mongoose.model('Server', new mongoose.Schema({}, { strict: false }));
+    const server = await ServerModel.findById(serverId).lean();
+    if (!server) return res.status(404).json({ error: 'Server not found' });
 
-    // Fetch snapshots for this server and range
+    // ----------------------------
+    // 2️⃣ Fetch snapshots for this server
+    // ----------------------------
+    const Snapshot = mongoose.model('Snapshot', new mongoose.Schema({}, { strict: false }));
     const snapshots = await Snapshot.find({
       serverId,
       range,
       createdAt: { $gte: since }
     }).sort({ createdAt: 1 }).lean();
 
-    if (!snapshots.length) return res.status(404).json({ error: 'No snapshots found' });
+    if (!snapshots.length) return res.status(404).json({ error: 'No snapshots found for this server' });
 
-    // Aggregate data for response
+    // ----------------------------
+    // 3️⃣ Aggregate data for response
+    // ----------------------------
     const latest = snapshots[snapshots.length - 1];
-
-    // Calculate deltas (previous snapshot vs latest)
     const prev = snapshots[snapshots.length - 2] || latest;
 
     const delta = (field) => (latest[field]?.current || 0) - (prev[field]?.current || 0);
 
-    // Top channels/members
     const topChannels = (latest.topChannels || []).slice(0, 5).map(c => ({
       name: c.name,
       count: c.count
@@ -63,6 +69,7 @@ router.get('/:serverId', auth, async (req, res) => {
     }));
 
     res.json({
+      serverName: server.name || 'Unknown', // include server name from Servers collection
       members: { current: latest.members?.current || 0, delta: delta('members') },
       messages: { current: latest.messages?.current || 0, delta: delta('messages') },
       voice: { current: latest.voice?.current || 0, delta: delta('voice') },
