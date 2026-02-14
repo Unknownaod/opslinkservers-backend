@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const SnapshotSchema = new mongoose.Schema({
   serverId: { type: String, index: true },
@@ -15,6 +15,11 @@ const SnapshotSchema = new mongoose.Schema({
   },
 
   voice: {
+    current: Number,
+    delta: Number
+  },
+
+  joins: {
     current: Number,
     delta: Number
   },
@@ -41,4 +46,4 @@ const SnapshotSchema = new mongoose.Schema({
 
 SnapshotSchema.index({ serverId: 1, range: 1 });
 
-export default mongoose.model('Snapshot', SnapshotSchema);
+module.exports = mongoose.models.Snapshot || mongoose.model('Snapshot', SnapshotSchema);
