@@ -23,6 +23,7 @@ const app = express();
 const allowedOrigins = [
   'file://',
   'https://servers.opslinksystems.xyz',
+  'https://dash.opslinksystems.xyz',
   'https://opslinkservers-ek35d02rp-opslink-systems-projects.vercel.app',
   'http://localhost:3000',
   'http://localhost:5500',
@@ -124,5 +125,6 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 
 
