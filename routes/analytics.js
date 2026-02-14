@@ -1,7 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Snapshot = require('../models/Snapshot');
-const Server = require('../models/Server');
 
 const router = express.Router();
 
@@ -16,7 +15,8 @@ function parseRange(range) {
     '24h': 24,
     '7d': 7 * 24,
     '30d': 30 * 24,
-    '90d': 90 * 24
+    '90d': 90 * 24,
+    'all': 1000 * 24 // arbitrary large number
   };
 
   const hoursAgo = ranges[range] || ranges['7d'];
@@ -31,6 +31,7 @@ router.get('/:discordServerId', auth, async (req, res) => {
   try {
     const { discordServerId } = req.params;
     const range = req.query.range || '7d';
+    const topN = parseInt(req.query.top) || 5; // allow configurable top N
     const since = parseRange(range);
 
     if (!discordServerId) return res.status(400).json({ error: 'Invalid Discord server ID' });
@@ -61,7 +62,7 @@ router.get('/:discordServerId', auth, async (req, res) => {
         afkMembers: 0,
         topChannels: [],
         topMembers: [],
-        chart: { labels: [], members: [], messages: [], voice: [], joins: [] }
+        chart: { labels: [], members: [], messages: [], voice: [], joins: [], voiceMinutes: [] }
       });
     }
 
@@ -85,9 +86,29 @@ router.get('/:discordServerId', auth, async (req, res) => {
       labels: chartLabels,
       members: snapshots.map(s => s.members?.current || 0),
       messages: snapshots.map(s => s.messages?.current || 0),
+      joins: snapshots.map(s => s.joins?.current || 0),
       voice: snapshots.map(s => s.voice?.current || 0),
-      joins: snapshots.map(s => s.joins?.current || 0)
+      voiceMinutes: snapshots.map(s => s.voice?.minutes || 0)
     };
+
+    // ---------------------------
+    // 5️⃣ Prepare top channels & members
+    // ---------------------------
+    const topChannels = (latest.topChannels || [])
+      .sort((a, b) => (b.count || 0) - (a.count || 0))
+      .slice(0, topN)
+      .map(c => ({
+        name: c.name || 'Unknown',
+        count: c.count || 0
+      }));
+
+    const topMembers = (latest.topMembers || [])
+      .sort((a, b) => (b.activityScore || 0) - (a.activityScore || 0))
+      .slice(0, topN)
+      .map(m => ({
+        name: m.name || 'Unknown',
+        activityScore: m.activityScore || 0
+      }));
 
     res.json({
       serverName: latest.serverName || 'Unknown',
@@ -103,16 +124,8 @@ router.get('/:discordServerId', auth, async (req, res) => {
       boosts: latest.boosts || 0,
       afkMembers: latest.afkMembers || 0,
 
-      topChannels: (latest.topChannels || []).slice(0, 5).map(c => ({
-        name: c.name || 'Unknown',
-        count: c.count || 0
-      })),
-
-      topMembers: (latest.topMembers || []).slice(0, 5).map(m => ({
-        name: m.name || 'Unknown',
-        count: m.count || 0
-      })),
-
+      topChannels,
+      topMembers,
       chart
     });
 
