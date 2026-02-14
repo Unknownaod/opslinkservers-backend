@@ -110,9 +110,15 @@ router.post('/login', async (req, res) => {
     if (!user.isVerified)
       return res.status(403).json({ error: 'Please verify your email before logging in' });
 
-    // === PREMIUM CHECK ===
-    if (!user.isPremium)
-      return res.status(403).json({ error: 'You must be a premium user to log in here' });
+    // === PREMIUM CHECK ONLY FOR SPECIFIC DOMAIN ===
+    const allowedDomain = 'https://dash.opslinksystems.xyz';
+    const referer = req.get('Referer'); // Check if the request is coming from the allowed domain
+
+    if (referer && referer.startsWith(allowedDomain)) {
+      if (!user.isPremium) {
+        return res.status(403).json({ error: 'You must be a premium user to log in here' });
+      }
+    }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: '7d'
@@ -133,6 +139,7 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 // =======================
 // Resend Verification Email
@@ -471,6 +478,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
