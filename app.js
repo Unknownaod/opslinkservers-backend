@@ -14,7 +14,7 @@ const serverRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/user');
-const analyticRoutes = require('./routes/analytics');
+const analyticRoutes = require('./routes/analytics'); // we'll pass the connection
 
 const app = express();
 
@@ -52,24 +52,43 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // --------------------
-// MongoDB Connection
+// MongoDB Connections
 // --------------------
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected'))
+
+// 1️⃣ Default DB (main app)
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('✅ MongoDB (main) connected'))
   .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
+    console.error('❌ MongoDB (main) connection error:', err);
     process.exit(1);
   });
 
+// 2️⃣ Analytics DB (separate connection)
+const analyticsConnection = mongoose.createConnection(process.env.MongoDb_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+
+analyticsConnection.on('connected', () => console.log('✅ MongoDB (analytics) connected'));
+analyticsConnection.on('error', (err) => console.error('❌ MongoDB (analytics) connection error:', err));
+
+// Pass this connection to your analytics route
+app.use('/api/analytics', (req, res, next) => {
+  req.analyticsDb = analyticsConnection;
+  next();
+}, analyticRoutes);
+
 // --------------------
-// Routes
+// Other Routes
 // --------------------
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/analytics', analyticRoutes);
 
 // --------------------
 // Health check
@@ -127,7 +146,3 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-
-
-
