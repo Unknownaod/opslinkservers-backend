@@ -429,9 +429,19 @@ router.get('/role/:discordUsername', async (req, res) => {
   }
 });
 
+// routes/servers.js
+router.post('/sponsor/:id', async (req, res) => {
+  const server = await Server.findById(req.params.id);
+  if(!server) return res.status(404).json({error: 'Server not found'});
+
+  server.sponsored = !server.sponsored;
+  await server.save();
+  res.json({success: true, sponsored: server.sponsored});
+});
 
 
 module.exports = router;
+
 
 
 
