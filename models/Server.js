@@ -61,7 +61,8 @@ const serverSchema = new mongoose.Schema({
   rules: { type: String, trim: true, maxlength: 4096 },
   website: { type: String, trim: true, maxlength: 255 },
   nsfw: { type: Boolean, default: false },
-
+  sponsored: { type: Boolean, default: false },
+  
   tags: {
     type: [String],
     default: [],
@@ -122,4 +123,5 @@ serverSchema.index({ discordServerId: 1 });
 serverSchema.index({ 'editRequests.status': 1 });
 
 module.exports = mongoose.model('Server', serverSchema);
+
 
