@@ -370,10 +370,10 @@ router.post('/reset-password', async (req, res) => {
 // =======================
 // Change Discord Username
 // =======================
-router.post('/change-username', async (req, res) => {
-  const { userId, newDiscordUsername } = req.body;
+router.post('/change-username', verifyJWT, async (req, res) => {
+  const { newDiscordUsername } = req.body;
 
-  if (!userId || !newDiscordUsername) {
+  if (!newDiscordUsername) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -384,8 +384,8 @@ router.post('/change-username', async (req, res) => {
       return res.status(400).json({ error: 'Discord username already exists' });
     }
 
-    // Find the user by their ID
-    const user = await User.findById(userId);
+    // Find the user by ID from JWT
+    const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -395,11 +395,13 @@ router.post('/change-username', async (req, res) => {
     await user.save();
 
     res.status(200).json({ message: 'Discord username updated successfully', discordUsername: newDiscordUsername });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 // =======================
 // QR Login Routes
@@ -511,6 +513,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
