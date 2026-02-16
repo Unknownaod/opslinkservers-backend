@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Server = require('../models/Server');
 const { sendEmail } = require('../utils/sendEmail');
 const bcrypt = require('bcrypt');
 
@@ -370,7 +371,7 @@ router.post('/reset-password', async (req, res) => {
 // =======================
 // Change Discord Username
 // =======================
-router.post('/change-username', verifyJWT, async (req, res) => {
+router.post('/change-username', auth, async (req, res) => {
   const { newDiscordUsername } = req.body;
 
   if (!newDiscordUsername) {
@@ -384,18 +385,28 @@ router.post('/change-username', verifyJWT, async (req, res) => {
       return res.status(400).json({ error: 'Discord username already exists' });
     }
 
-    // Find the user by ID from JWT
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    // Update user's Discord username
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Update the username
+    const oldUsername = user.discordUsername;
     user.discordUsername = newDiscordUsername;
     await user.save();
 
-    res.status(200).json({ message: 'Discord username updated successfully', discordUsername: newDiscordUsername });
+    // Update submitterDiscord in all servers submitted by this user
+    await Server.updateMany(
+      { 'submitter': user._id },
+      {
+        $set: {
+          'submitterDiscord.username': newDiscordUsername
+        }
+      }
+    );
 
+    res.status(200).json({
+      message: 'Discord username updated successfully',
+      discordUsername: newDiscordUsername
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -513,6 +524,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
