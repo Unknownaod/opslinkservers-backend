@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Server = require('../models/Server');
+const auth = require('../middleware/auth');
 const { sendEmail } = require('../utils/sendEmail');
 const bcrypt = require('bcrypt');
 
@@ -524,6 +525,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
