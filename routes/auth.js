@@ -422,6 +422,22 @@ const fetch = require('node-fetch');
 const querystring = require('querystring');
 
 // =======================
+// Safe JSON Fetch Helper
+// =======================
+async function fetchJsonOrThrow(url, options = {}) {
+  const res = await fetch(url, options);
+
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Expected JSON but got:\n${text}`);
+  }
+
+  return JSON.parse(text);
+}
+
+// =======================
 // OAuth Config
 // =======================
 const OAUTH_CONFIG = {
@@ -793,6 +809,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
