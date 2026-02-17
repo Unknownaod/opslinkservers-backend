@@ -852,7 +852,6 @@ try {
 
   throw new Error('Connection rolled back due to database failure.');
 }
-  }
 
 // =======================
 // DELETE Disconnect platform (for all platforms)
@@ -1061,6 +1060,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
