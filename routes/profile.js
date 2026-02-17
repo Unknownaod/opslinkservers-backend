@@ -185,4 +185,38 @@ router.delete('/socials/delete/:id', auth, async (req, res) => {
   }
 });
 
+/**
+ * ==========================================
+ * DELETE /api/profile/connections/:platform
+ * Removes a connected social
+ * ==========================================
+ */
+router.delete('/connections/:platform', auth, async (req, res) => {
+  try {
+    const { platform } = req.params;
+    const userId = req.user._id;
+
+    if (!platform) {
+      return res.status(400).json({ success: false, message: 'Platform required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (!user.socials || !user.socials[platform]) {
+      return res.status(404).json({ success: false, message: 'Social not connected' });
+    }
+
+    // Remove the social connection
+    delete user.socials[platform];
+    await user.save();
+
+    res.json({ success: true, message: `${platform} disconnected` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+
 module.exports = router;
