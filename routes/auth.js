@@ -567,42 +567,89 @@ router.get('/connect/callback/:platform', async (req, res) => {
   try {
     let tokenData, username, profileUrl;
 
-// ===== Spotify =====
+// ===== Spotify (HARDENED VERSION) =====
 if (platform === 'spotify') {
   if (!code) throw new Error('No authorization code from Spotify');
 
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: cfg.redirect_uri,
-    client_id: cfg.client_id,
-    client_secret: cfg.client_secret
-  });
+  let issuedAccessToken = null; // Track token for emergency revoke
 
-  const tokenRes = await fetch(cfg.token_url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString()
-  });
+  try {
+    // =========================
+    // Exchange code for token
+    // =========================
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: cfg.redirect_uri,
+      client_id: cfg.client_id,
+      client_secret: cfg.client_secret
+    });
 
-  tokenData = await tokenRes.json();
+    const tokenRes = await fetch(cfg.token_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
 
-  if (!tokenData.access_token) {
-    throw new Error(`Spotify token error: ${JSON.stringify(tokenData)}`);
+    tokenData = await tokenRes.json();
+
+    if (!tokenData.access_token) {
+      throw new Error(`Spotify token error: ${JSON.stringify(tokenData)}`);
+    }
+
+    issuedAccessToken = tokenData.access_token;
+
+    // =========================
+    // Fetch profile
+    // =========================
+    const profileRes = await fetch(cfg.profile_url, {
+      headers: { Authorization: `Bearer ${issuedAccessToken}` }
+    });
+
+    const profile = await profileRes.json();
+
+    if (!profile.id) {
+      throw new Error(`Spotify profile error: ${JSON.stringify(profile)}`);
+    }
+
+    username = profile.display_name || profile.id;
+    profileUrl =
+      profile.external_urls?.spotify ||
+      `https://open.spotify.com/user/${profile.id}`;
+
+  } catch (err) {
+
+    console.error('Spotify OAuth failure:', err.message);
+
+    // =========================
+    // 🔥 AUTO REVOKE TOKEN IF ISSUED
+    // =========================
+    if (issuedAccessToken) {
+      try {
+        await fetch('https://accounts.spotify.com/api/token', {
+          method: 'POST',
+          headers: {
+            Authorization:
+              'Basic ' +
+              Buffer.from(
+                process.env.SPOTIFY_CLIENT_ID +
+                  ':' +
+                  process.env.SPOTIFY_CLIENT_SECRET
+              ).toString('base64')
+          },
+          body: new URLSearchParams({
+            token: issuedAccessToken
+          })
+        });
+        console.log('Spotify token revoked due to failure.');
+      } catch (revokeErr) {
+        console.error('Failed to revoke Spotify token:', revokeErr.message);
+      }
+    }
+
+    // Ensure nothing gets saved
+    throw new Error('Spotify connection failed and was safely rolled back.');
   }
-
-  const profileRes = await fetch(cfg.profile_url, {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` }
-  });
-
-  const profile = await profileRes.json();
-
-  if (!profile.id) {
-    throw new Error(`Spotify profile error: ${JSON.stringify(profile)}`);
-  }
-
-  username = profile.display_name || profile.id;
-  profileUrl = profile.external_urls?.spotify || `https://open.spotify.com/user/${profile.id}`;
 }
 
 
@@ -918,6 +965,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
