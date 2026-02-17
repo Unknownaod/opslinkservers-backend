@@ -532,6 +532,7 @@ router.get('/connect/callback/:platform', async (req, res) => {
 
   if (!state) return res.status(401).send('Unauthorized');
 
+  // Decode JWT from state
   let decoded;
   try {
     decoded = jwt.verify(state, process.env.JWT_SECRET);
@@ -539,7 +540,9 @@ router.get('/connect/callback/:platform', async (req, res) => {
     return res.status(401).send('Invalid token');
   }
 
-  const user = await User.findById(decoded._id);
+  // Support both old and new JWT payloads
+  const userId = decoded.id || decoded._id;
+  const user = await User.findById(userId);
   if (!user) return res.status(404).send('User not found');
 
   const cfg = OAUTH_CONFIG[platform];
@@ -630,7 +633,7 @@ router.get('/connect/callback/:platform', async (req, res) => {
       profileUrl = `https://youtube.com`;
     }
 
-    // ===== Save =====
+    // ===== Save Social Connection =====
     user.socials = user.socials || {};
     user.socials[platform] = {
       connected: true,
@@ -641,16 +644,16 @@ router.get('/connect/callback/:platform', async (req, res) => {
     };
     await user.save();
 
-    // Send back a page that stores the token and redirects back to your frontend
+    // ✅ Return a page that sets the JWT in localStorage and redirects
     const frontendUrl = process.env.FRONTEND_URL || 'https://opslinkservers.com/';
     res.send(`
       <html>
         <body>
           <h2>${platform} connected as ${username}</h2>
           <script>
-            // Store JWT in localStorage so session persists
+            // Persist JWT from OAuth state so user stays logged in
             localStorage.setItem('token', '${state}');
-            // Redirect back to your profile page
+            // Redirect back to frontend profile page
             window.location.href = '${frontendUrl}';
           </script>
         </body>
@@ -776,6 +779,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
