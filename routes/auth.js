@@ -742,27 +742,33 @@ if (platform === 'twitch') {
 }
 
 
-// ===== YouTube (HARDENED) =====
+// ===== YouTube (HARDENED FIX) =====
 if (platform === 'youtube') {
-
   let issuedAccessToken = null;
 
   try {
+    // 1️⃣ Exchange authorization code for access token
     const body = new URLSearchParams({
       code,
       client_id: cfg.client_id,
       client_secret: cfg.client_secret,
       redirect_uri: cfg.redirect_uri,
       grant_type: 'authorization_code'
-    });
+    }).toString();
 
     const tokenRes = await fetch(cfg.token_url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
+      body
     });
 
-    tokenData = await tokenRes.json();
+    // Parse token response safely
+    const tokenText = await tokenRes.text();
+    try {
+      tokenData = JSON.parse(tokenText);
+    } catch {
+      throw new Error(`YouTube token response not JSON: ${tokenText}`);
+    }
 
     if (!tokenData.access_token) {
       throw new Error(`YouTube token error: ${JSON.stringify(tokenData)}`);
@@ -770,21 +776,23 @@ if (platform === 'youtube') {
 
     issuedAccessToken = tokenData.access_token;
 
-    const profileRes = await fetch(cfg.profile_url, {
-      headers: { Authorization: `Bearer ${issuedAccessToken}` }
-    });
+    const profileRes = await fetch(
+      'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+      {
+        headers: { Authorization: `Bearer ${issuedAccessToken}` }
+      }
+    );
 
-    const profile = await profileRes.json();
+    const profileJson = await profileRes.json();
 
-    if (!profile.name) {
-      throw new Error(`YouTube profile error: ${JSON.stringify(profile)}`);
+    if (!profileJson.items || profileJson.items.length === 0) {
+      throw new Error(`YouTube profile error: ${JSON.stringify(profileJson)}`);
     }
 
-    username = profile.name;
-    profileUrl = `https://youtube.com`;
+    username = profileJson.items[0].snippet.title;
+    profileUrl = `https://youtube.com/channel/${profileJson.items[0].id}`;
 
   } catch (err) {
-
     console.error('YouTube OAuth failure:', err.message);
 
     if (issuedAccessToken) {
@@ -792,9 +800,7 @@ if (platform === 'youtube') {
         await fetch('https://oauth2.googleapis.com/revoke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            token: issuedAccessToken
-          })
+          body: new URLSearchParams({ token: issuedAccessToken })
         });
       } catch {}
     }
@@ -1069,6 +1075,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
