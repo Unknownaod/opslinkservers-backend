@@ -711,6 +711,98 @@ if (platform === 'github') {
   }
 });
 
+// =======================
+// DELETE Disconnect platform (for all platforms)
+// =======================
+router.delete('/connections/:platform', async (req, res) => {
+  const { platform } = req.params;
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  const user = await User.findById(decoded._id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (!user.socials || !user.socials[platform]) {
+    return res.status(404).json({ error: `${platform} is not connected` });
+  }
+
+  try {
+    // Optional: Handle platform-specific cleanup actions (revoking OAuth tokens, etc.)
+
+    const social = user.socials[platform];
+
+    // Handle platform-specific token revocation and cleanup:
+    if (platform === 'spotify') {
+      // Spotify token revocation
+      await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(
+            process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET
+          ).toString('base64')
+        },
+        body: new URLSearchParams({
+          token: social.accessToken
+        })
+      }).catch(() => {});
+    }
+
+    if (platform === 'github') {
+      // GitHub token revocation (if necessary, usually done by user manually)
+      // GitHub doesn't offer a direct token revocation API, but you can delete the access token on the user side if needed.
+      // This can be added if GitHub token revocation via API is desired.
+    }
+
+    if (platform === 'twitch') {
+      // Twitch token revocation (if necessary, usually done by user manually)
+      await fetch(`https://id.twitch.tv/oauth2/revoke`, {
+        method: 'POST',
+        body: new URLSearchParams({
+          client_id: process.env.TWITCH_CLIENT_ID,
+          client_secret: process.env.TWITCH_CLIENT_SECRET,
+          token: social.accessToken
+        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      }).catch(() => {});
+    }
+
+    if (platform === 'youtube') {
+      // YouTube token revocation (if necessary, usually done by user manually)
+      await fetch(`https://oauth2.googleapis.com/revoke`, {
+        method: 'POST',
+        body: new URLSearchParams({
+          token: social.accessToken
+        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      }).catch(() => {});
+    }
+
+    // Remove the platform's connection from user.socials
+    delete user.socials[platform];
+    user.markModified('socials'); // Important to notify Mongoose about the changes
+
+    await user.save();
+
+    // Respond with success message and updated socials list
+    res.json({ success: true, message: `${platform} disconnected successfully`, socials: user.socials });
+
+  } catch (err) {
+    console.error('Failed to disconnect platform', err);
+    res.status(500).json({ error: 'Failed to disconnect platform' });
+  }
+});
 
 
 
@@ -824,6 +916,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
