@@ -127,7 +127,7 @@ router.patch('/:id/status', auth, adminAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
 
   const { status, rejectionReason } = req.body;
-  if (!['approved', 'denied', 'pending'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  if (!['approved', 'denied', 'pending', 'taken-down'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   try {
     const server = await Server.findById(req.params.id);
@@ -441,6 +441,7 @@ router.post('/sponsor/:id', async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
