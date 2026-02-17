@@ -567,8 +567,10 @@ router.get('/connect/callback/:platform', async (req, res) => {
   try {
     let tokenData, username, profileUrl;
 
-    // ===== Spotify =====
+// ===== Spotify =====
 if (platform === 'spotify') {
+  if (!code) throw new Error('No authorization code from Spotify');
+
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -577,17 +579,30 @@ if (platform === 'spotify') {
     client_secret: cfg.client_secret
   });
 
-  const tokenRes = await fetch(cfg.token_url, { method: 'POST', body });
-  tokenData = await tokenRes.json();
-
-  if (!tokenData.access_token) throw new Error(`No access token from Spotify: ${JSON.stringify(tokenData)}`);
-
-  const profile = await fetchJsonOrThrow(cfg.profile_url, {
-    Authorization: `Bearer ${tokenData.access_token}`
+  const tokenRes = await fetch(cfg.token_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
   });
 
+  tokenData = await tokenRes.json();
+
+  if (!tokenData.access_token) {
+    throw new Error(`Spotify token error: ${JSON.stringify(tokenData)}`);
+  }
+
+  const profileRes = await fetch(cfg.profile_url, {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` }
+  });
+
+  const profile = await profileRes.json();
+
+  if (!profile.id) {
+    throw new Error(`Spotify profile error: ${JSON.stringify(profile)}`);
+  }
+
   username = profile.display_name || profile.id;
-  profileUrl = profile.external_urls.spotify;
+  profileUrl = profile.external_urls?.spotify || `https://open.spotify.com/user/${profile.id}`;
 }
 
 
@@ -809,6 +824,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
