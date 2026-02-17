@@ -685,78 +685,174 @@ if (platform === 'github') {
   profileUrl = profile.html_url;
 }
 
-    // ===== Twitch =====
-    if (platform === 'twitch') {
-      const tokenRes = await fetch(
-        `${cfg.token_url}?client_id=${cfg.client_id}&client_secret=${cfg.client_secret}&code=${code}&grant_type=authorization_code&redirect_uri=${cfg.redirect_uri}`,
-        { method: 'POST' }
-      );
-      tokenData = await tokenRes.json();
+// ===== Twitch (HARDENED) =====
+if (platform === 'twitch') {
 
-      const profile = await fetch(cfg.profile_url, {
-        headers: {
-          'Client-ID': cfg.client_id,
-          Authorization: `Bearer ${tokenData.access_token}`
-        }
-      }).then(r => r.json());
+  let issuedAccessToken = null;
 
-      username = profile.data[0].display_name;
-      profileUrl = `https://twitch.tv/${profile.data[0].login}`;
+  try {
+    const tokenRes = await fetch(
+      `${cfg.token_url}?client_id=${cfg.client_id}&client_secret=${cfg.client_secret}&code=${code}&grant_type=authorization_code&redirect_uri=${cfg.redirect_uri}`,
+      { method: 'POST' }
+    );
+
+    tokenData = await tokenRes.json();
+
+    if (!tokenData.access_token) {
+      throw new Error(`Twitch token error: ${JSON.stringify(tokenData)}`);
     }
 
-    // ===== YouTube =====
-    if (platform === 'youtube') {
-      const body = new URLSearchParams({
-        code,
-        client_id: cfg.client_id,
-        client_secret: cfg.client_secret,
-        redirect_uri: cfg.redirect_uri,
-        grant_type: 'authorization_code'
-      });
+    issuedAccessToken = tokenData.access_token;
 
-      const tokenRes = await fetch(cfg.token_url, { method: 'POST', body });
-      tokenData = await tokenRes.json();
+    const profileRes = await fetch(cfg.profile_url, {
+      headers: {
+        'Client-ID': cfg.client_id,
+        Authorization: `Bearer ${issuedAccessToken}`
+      }
+    });
 
-      const profile = await fetch(cfg.profile_url, {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` }
-      }).then(r => r.json());
+    const profile = await profileRes.json();
 
-      username = profile.name;
-      profileUrl = `https://youtube.com`;
+    if (!profile.data || !Array.isArray(profile.data) || !profile.data[0]) {
+      throw new Error(`Twitch profile error: ${JSON.stringify(profile)}`);
     }
 
-    // ===== Save Social Connection =====
-    user.socials = user.socials || {};
-    user.socials[platform] = {
-      connected: true,
-      username,
-      profileUrl,
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token
-    };
-    await user.save();
-
-    // ✅ Return a page that sets the JWT in localStorage and redirects
-    const frontendUrl = process.env.FRONTEND_URL || 'https://opslinkservers.com/';
-    res.send(`
-      <html>
-        <body>
-          <h2>${platform} connected as ${username}</h2>
-          <script>
-            // Persist JWT from OAuth state so user stays logged in
-            localStorage.setItem('token', '${state}');
-            // Redirect back to frontend profile page
-            window.location.href = '${frontendUrl}';
-          </script>
-        </body>
-      </html>
-    `);
+    username = profile.data[0].display_name;
+    profileUrl = `https://twitch.tv/${profile.data[0].login}`;
 
   } catch (err) {
-    console.error(err);
-    res.status(500).send('OAuth failed');
+
+    console.error('Twitch OAuth failure:', err.message);
+
+    if (issuedAccessToken) {
+      try {
+        await fetch('https://id.twitch.tv/oauth2/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: cfg.client_id,
+            token: issuedAccessToken
+          })
+        });
+      } catch {}
+    }
+
+    throw new Error('Twitch connection failed and was safely rolled back.');
   }
-});
+}
+
+
+// ===== YouTube (HARDENED) =====
+if (platform === 'youtube') {
+
+  let issuedAccessToken = null;
+
+  try {
+    const body = new URLSearchParams({
+      code,
+      client_id: cfg.client_id,
+      client_secret: cfg.client_secret,
+      redirect_uri: cfg.redirect_uri,
+      grant_type: 'authorization_code'
+    });
+
+    const tokenRes = await fetch(cfg.token_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    tokenData = await tokenRes.json();
+
+    if (!tokenData.access_token) {
+      throw new Error(`YouTube token error: ${JSON.stringify(tokenData)}`);
+    }
+
+    issuedAccessToken = tokenData.access_token;
+
+    const profileRes = await fetch(cfg.profile_url, {
+      headers: { Authorization: `Bearer ${issuedAccessToken}` }
+    });
+
+    const profile = await profileRes.json();
+
+    if (!profile.name) {
+      throw new Error(`YouTube profile error: ${JSON.stringify(profile)}`);
+    }
+
+    username = profile.name;
+    profileUrl = `https://youtube.com`;
+
+  } catch (err) {
+
+    console.error('YouTube OAuth failure:', err.message);
+
+    if (issuedAccessToken) {
+      try {
+        await fetch('https://oauth2.googleapis.com/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token: issuedAccessToken
+          })
+        });
+      } catch {}
+    }
+
+    throw new Error('YouTube connection failed and was safely rolled back.');
+  }
+}
+
+
+// ===== SAFE SAVE (WITH AUTO ROLLBACK) =====
+try {
+
+  user.socials = user.socials || {};
+  user.socials[platform] = {
+    connected: true,
+    username,
+    profileUrl,
+    accessToken: tokenData.access_token,
+    refreshToken: tokenData.refresh_token
+  };
+
+  await user.save();
+
+} catch (saveErr) {
+
+  console.error('Database save failed:', saveErr.message);
+
+  // 🔥 Revoke token if DB fails
+  if (tokenData?.access_token) {
+    try {
+
+      if (platform === 'twitch') {
+        await fetch('https://id.twitch.tv/oauth2/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: cfg.client_id,
+            token: tokenData.access_token
+          })
+        });
+      }
+
+      if (platform === 'youtube') {
+        await fetch('https://oauth2.googleapis.com/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token: tokenData.access_token
+          })
+        });
+      }
+
+    } catch {}
+  }
+
+  throw new Error('Connection rolled back due to database failure.');
+}
+
 
 // =======================
 // DELETE Disconnect platform (for all platforms)
@@ -965,6 +1061,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
