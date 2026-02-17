@@ -308,9 +308,16 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
   }
 });
 
-// Delete server (admin)
+// Delete server (management only)
 router.delete('/:id', auth, adminAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid server ID' });
+  // ⛔ extra safety: only management can delete
+  if (req.user.role !== 'management') {
+    return res.status(403).json({ error: 'Access denied. Management only.' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid server ID' });
+  }
 
   try {
     const server = await Server.findById(req.params.id);
@@ -326,6 +333,7 @@ router.delete('/:id', auth, adminAuth, async (req, res) => {
     res.status(500).json({ error: 'Delete failed.' });
   }
 });
+
 
 // Get single server + comments
 router.get('/:id', async (req, res) => {
@@ -441,6 +449,7 @@ router.post('/sponsor/:id', async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
