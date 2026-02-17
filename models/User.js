@@ -1,6 +1,17 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
+/* =========================
+   Social connection schema
+========================= */
+const SocialSchema = new mongoose.Schema({
+  connected: { type: Boolean, default: false },
+  username: { type: String },
+  profileUrl: { type: String },
+  accessToken: { type: String },
+  refreshToken: { type: String },
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   // =========================
   // Basic auth info
@@ -14,15 +25,19 @@ const userSchema = new mongoose.Schema({
   discordUsername: { type: String, required: true },
   discordTag: { type: String },
   discordUserID: { type: String, required: true },
-  discordAvatar: { type: String },       // Avatar hash
-  discordStatus: { type: String },       // online, idle, dnd, offline
-  discordActivity: { type: String },     // Playing game / listening / streaming
-  discordBadges: { type: [String], default: [] }, // Array of badge names
+  discordAvatar: { type: String },
+  discordStatus: { type: String },
+  discordActivity: { type: String },
+  discordBadges: { type: [String], default: [] },
 
   // =========================
   // User role
   // =========================
-  role: { type: String, enum: ['user','admin','management'], default: 'user' },
+  role: {
+    type: String,
+    enum: ['user', 'admin', 'management'],
+    default: 'user'
+  },
 
   // =========================
   // Premium flag
@@ -43,28 +58,35 @@ const userSchema = new mongoose.Schema({
   passwordResetExpires: { type: Date },
 
   // =========================
-  // Token version for session invalidation
+  // Token version
   // =========================
   tokenVersion: { type: Number, default: 0 },
 
   // =========================
-  // Timestamps
+  // Connected socials (FINAL)
   // =========================
+  socials: {
+    twitch: { type: SocialSchema, default: () => ({}) },
+    spotify: { type: SocialSchema, default: () => ({}) },
+    youtube: { type: SocialSchema, default: () => ({}) },
+    github: { type: SocialSchema, default: () => ({}) },
+  }
+
 }, { timestamps: true });
 
-// =========================
-// Hash password before save
-// =========================
-userSchema.pre('save', async function(next){
-  if(!this.isModified('password')) return next();
+/* =========================
+   Hash password before save
+========================= */
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
 
-// =========================
-// Compare password method
-// =========================
-userSchema.methods.comparePassword = function(pass){
+/* =========================
+   Compare password
+========================= */
+userSchema.methods.comparePassword = function (pass) {
   return bcrypt.compare(pass, this.password);
 };
 
