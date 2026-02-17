@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   discordUsername: { type: String, required: true },
   discordUserID: { type: String, required: true },
   discordTag: { type: String },
-  role: { type: String, enum: ['user','admin'], default: 'user' },
+  role: { type: String, enum: ['user','admin','management'], default: 'user' },
 
   // =========================
   // Premium flag
@@ -50,3 +50,4 @@ userSchema.methods.comparePassword = function(pass){
 };
 
 module.exports = mongoose.model('User', userSchema);
+
