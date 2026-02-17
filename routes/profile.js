@@ -188,7 +188,7 @@ router.delete('/socials/delete/:id', auth, async (req, res) => {
 /**
  * ==========================================
  * DELETE /api/profile/connections/:platform
- * Removes a connected social
+ * Completely removes a connected social
  * ==========================================
  */
 router.delete('/connections/:platform', auth, async (req, res) => {
@@ -201,22 +201,54 @@ router.delete('/connections/:platform', auth, async (req, res) => {
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-    if (!user.socials || !user.socials[platform]) {
-      return res.status(404).json({ success: false, message: 'Social not connected' });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Remove the social connection
+    if (!user.socials || !user.socials[platform]) {
+      return res.status(404).json({ success: false, message: 'Platform not connected' });
+    }
+
+    const social = user.socials[platform];
+    if (platform === 'spotify' && social.accessToken) {
+      await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(
+            process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET
+          ).toString('base64')
+        },
+        body: new URLSearchParams({
+          token: social.accessToken
+        })
+      }).catch(() => {});
+    }
+    */
+
+    // 🔥 Completely remove the platform object
+    user.socials.set(platform, undefined);
     delete user.socials[platform];
+
+    // VERY IMPORTANT for nested objects
+    user.markModified('socials');
+
     await user.save();
 
-    res.json({ success: true, message: `${platform} disconnected` });
+    return res.json({
+      success: true,
+      message: `${platform} fully disconnected`,
+      socials: user.socials
+    });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Disconnect error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
   }
 });
+
 
 
 module.exports = router;
