@@ -223,7 +223,7 @@ router.delete('/connections/:platform', auth, async (req, res) => {
         })
       }).catch(() => {});
     }
-    */
+
 
     // 🔥 Completely remove the platform object
     user.socials.set(platform, undefined);
