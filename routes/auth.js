@@ -419,10 +419,6 @@ router.post('/change-username', auth, async (req, res) => {
 // Social Connections Routes (NO AUTH)
 // =======================
 const querystring = require('querystring');
-const fetch = require('node-fetch');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-
 // =======================
 // OAuth Config
 // =======================
@@ -764,5 +760,6 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
