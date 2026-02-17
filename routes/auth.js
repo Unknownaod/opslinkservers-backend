@@ -948,6 +948,15 @@ router.delete('/connections/:platform', async (req, res) => {
 });
 
 
+    // Success response after saving
+    return res.redirect(`${process.env.FRONTEND_URL}/connections.html`);
+
+  } catch (err) {
+    console.error('OAuth callback failed:', err);
+    return res.redirect(`${process.env.FRONTEND_URL}/connections-error.html`);
+  }
+
+});
 
 
 // =======================
@@ -1059,9 +1068,8 @@ router.post('/qr-subscribe', (req, res) => {
   res.status(400).json({ error: 'Socket not found or server not initialized' });
 });
 
-  });
-
 module.exports = router;
+
 
 
 
