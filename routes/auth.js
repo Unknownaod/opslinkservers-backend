@@ -572,26 +572,37 @@ router.get('/connect/callback/:platform', async (req, res) => {
       profileUrl = profile.external_urls.spotify;
     }
 
-    // ===== GitHub =====
-    if (platform === 'github') {
-      const tokenRes = await fetch(cfg.token_url, {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-        body: JSON.stringify({
-          client_id: cfg.client_id,
-          client_secret: cfg.client_secret,
-          code
-        })
-      });
-      tokenData = await tokenRes.json();
+// ===== GitHub =====
+if (platform === 'github') {
+  // Use URLSearchParams for x-www-form-urlencoded body
+  const body = new URLSearchParams({
+    client_id: cfg.client_id,
+    client_secret: cfg.client_secret,
+    code
+  });
 
-      const profile = await fetch(cfg.profile_url, {
-        headers: { Authorization: `token ${tokenData.access_token}` }
-      }).then(r => r.json());
+  const tokenRes = await fetch(cfg.token_url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
 
-      username = profile.login;
-      profileUrl = profile.html_url;
-    }
+  tokenData = await tokenRes.json();
+
+  if (!tokenData.access_token) {
+    throw new Error('GitHub did not return an access token');
+  }
+
+  const profile = await fetch(cfg.profile_url, {
+    headers: { Authorization: `token ${tokenData.access_token}` }
+  }).then(r => r.json());
+
+  username = profile.login;
+  profileUrl = profile.html_url;
+}
 
     // ===== Twitch =====
     if (platform === 'twitch') {
@@ -779,6 +790,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
