@@ -418,6 +418,7 @@ router.post('/change-username', auth, async (req, res) => {
 // =======================
 // Social Connections Routes (NO AUTH)
 // =======================
+const fetch = require('node-fetch');
 const querystring = require('querystring');
 // =======================
 // OAuth Config
