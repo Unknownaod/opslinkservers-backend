@@ -416,10 +416,11 @@ router.post('/change-username', auth, async (req, res) => {
 
 
 // =======================
-// Social Connections Routes (NO AUTH)
+// Social Connections Routes
 // =======================
 const fetch = require('node-fetch');
 const querystring = require('querystring');
+
 // =======================
 // OAuth Config
 // =======================
@@ -466,8 +467,12 @@ const OAUTH_CONFIG = {
 // GET connected socials
 // =======================
 router.get('/connections', async (req, res) => {
-  const { token } = req.query;
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
 
   let decoded;
   try {
@@ -627,7 +632,6 @@ router.get('/connect/callback/:platform', async (req, res) => {
 
     // ===== Save =====
     user.socials = user.socials || {};
-
     user.socials[platform] = {
       connected: true,
       username,
@@ -761,6 +765,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
