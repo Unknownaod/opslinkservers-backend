@@ -639,12 +639,22 @@ router.get('/connect/callback/:platform', async (req, res) => {
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token
     };
-
     await user.save();
 
+    // Send back a page that stores the token and redirects back to your frontend
+    const frontendUrl = process.env.FRONTEND_URL || 'https://opslinkservers.com/';
     res.send(`
-      <h2>${platform} connected as ${username}</h2>
-      <script>window.close();</script>
+      <html>
+        <body>
+          <h2>${platform} connected as ${username}</h2>
+          <script>
+            // Store JWT in localStorage so session persists
+            localStorage.setItem('token', '${state}');
+            // Redirect back to your profile page
+            window.location.href = '${frontendUrl}';
+          </script>
+        </body>
+      </html>
     `);
 
   } catch (err) {
@@ -652,6 +662,7 @@ router.get('/connect/callback/:platform', async (req, res) => {
     res.status(500).send('OAuth failed');
   }
 });
+
 
 
 
@@ -765,6 +776,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
