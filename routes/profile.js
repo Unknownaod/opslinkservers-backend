@@ -1,15 +1,45 @@
 const express = require('express');
-const auth = require('../middleware/auth'); // JWT middleware
+const auth = require('../middleware/auth');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Social = require('../models/Social');
+
 const router = express.Router();
 
 /**
+ * ==========================================
+ * GET /api/profile/connections
+ * Returns OAuth-connected platforms
+ * ==========================================
+ */
+router.get('/connections', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // If you store OAuth socials inside user.socials object
+    const socialsObject = user.socials || {};
+
+    const socials = Object.entries(socialsObject).map(([platform, data]) => ({
+      platform,
+      connected: data.connected || false,
+      username: data.username || '',
+      profileUrl: data.profileUrl || ''
+    }));
+
+    res.json({ socials });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+/**
+ * ==========================================
  * GET /api/profile/:id?
- * - No :id → current user
- * - Admins can fetch any user
- * - Normal users fetching others → only public info
- * Response structure matches front-end expectation
+ * ==========================================
  */
 router.get('/:id?', auth, async (req, res) => {
   try {
@@ -17,11 +47,16 @@ router.get('/:id?', auth, async (req, res) => {
     const requester = req.user;
     if (!requester) return res.status(401).json({ message: 'Unauthorized' });
 
-    // Fetch target user
     let user;
-    if (!id || id === requester._id.toString()) {
+
+    // If no ID → current user
+    if (!id) {
       user = await User.findById(requester._id).lean();
     } else {
+      // Prevent "connections" or invalid IDs from crashing
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid user ID' });
+      }
       user = await User.findById(id).lean();
     }
 
@@ -30,7 +65,6 @@ router.get('/:id?', auth, async (req, res) => {
     const isSelf = requester._id.toString() === user._id.toString();
     const isAdmin = requester.role === 'admin';
 
-    // Base response
     const response = {
       _id: user._id,
       discordUsername: user.discordUsername || '',
@@ -38,14 +72,13 @@ router.get('/:id?', auth, async (req, res) => {
       role: user.role || 'user',
     };
 
-    // Include private info for self/admin
     if (isSelf || isAdmin) {
       response.email = user.email || '';
       response.isVerified = user.isVerified || false;
       response.discordUserID = user.discordUserID || '';
     }
 
-    // Fetch socials (all public)
+    // Manual socials collection
     const socials = await Social.find({ user: user._id }).lean();
     response.socials = socials.map(s => ({
       _id: s._id,
@@ -54,12 +87,12 @@ router.get('/:id?', auth, async (req, res) => {
       url: s.url,
     }));
 
-    // Discord widget info
+    // Discord widget
     if (user.discordUserID) {
       const avatarHash = user.discordAvatar || '';
       response.discordWidget = {
-        avatar: avatarHash 
-          ? `https://cdn.discordapp.com/avatars/${user.discordUserID}/${avatarHash}.png` 
+        avatar: avatarHash
+          ? `https://cdn.discordapp.com/avatars/${user.discordUserID}/${avatarHash}.png`
           : 'https://cdn.discordapp.com/embed/avatars/0.png',
         username: user.discordUsername || '',
         status: user.discordStatus || 'offline',
@@ -69,16 +102,18 @@ router.get('/:id?', auth, async (req, res) => {
     }
 
     res.json(response);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
+
 /**
- * POST /api/socials/add
- * Body: { platform, handle }
- * Adds a social for logged-in user
+ * ==========================================
+ * POST /api/profile/socials/add
+ * ==========================================
  */
 router.post('/socials/add', auth, async (req, res) => {
   try {
@@ -86,12 +121,14 @@ router.post('/socials/add', auth, async (req, res) => {
     const userId = req.user._id;
 
     if (!platform || !handle) {
-      return res.status(400).json({ success: false, message: 'Platform and handle required' });
+      return res.status(400).json({
+        success: false,
+        message: 'Platform and handle required'
+      });
     }
 
-    // Generate URL
     let url;
-    switch(platform) {
+    switch (platform) {
       case 'twitter': url = `https://twitter.com/${handle}`; break;
       case 'instagram': url = `https://instagram.com/${handle}`; break;
       case 'github': url = `https://github.com/${handle}`; break;
@@ -101,7 +138,13 @@ router.post('/socials/add', auth, async (req, res) => {
       default: url = handle;
     }
 
-    const newSocial = await Social.create({ user: userId, platform, handle, url });
+    const newSocial = await Social.create({
+      user: userId,
+      platform,
+      handle,
+      url
+    });
+
     res.json({ success: true, social: newSocial });
 
   } catch (err) {
@@ -110,17 +153,24 @@ router.post('/socials/add', auth, async (req, res) => {
   }
 });
 
+
 /**
- * DELETE /api/socials/delete/:id
- * Deletes a social for the logged-in user
+ * ==========================================
+ * DELETE /api/profile/socials/delete/:id
+ * ==========================================
  */
 router.delete('/socials/delete/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid ID' });
+    }
+
     const social = await Social.findById(id);
-    if (!social) return res.status(404).json({ success: false, message: 'Social not found' });
+    if (!social)
+      return res.status(404).json({ success: false, message: 'Social not found' });
 
     if (social.user.toString() !== userId.toString()) {
       return res.status(403).json({ success: false, message: 'Not allowed' });
