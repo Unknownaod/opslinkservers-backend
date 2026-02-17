@@ -416,6 +416,208 @@ router.post('/change-username', auth, async (req, res) => {
 
 
 // =======================
+// Connections Routes
+// =======================
+const querystring = require('querystring');
+const fetch = require('node-fetch');
+
+// Make sure your User schema has:
+// connections: [
+//   { platform: String, username: String, accessToken: String, display: { type: Boolean, default: true } }
+// ]
+
+const OAUTH_CONFIG = {
+  spotify: {
+    client_id: process.env.SPOTIFY_CLIENT_ID,
+    client_secret: process.env.SPOTIFY_CLIENT_SECRET,
+    redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
+    scope: 'user-read-email',
+    auth_url: 'https://accounts.spotify.com/authorize',
+    token_url: 'https://accounts.spotify.com/api/token',
+    profile_url: 'https://api.spotify.com/v1/me'
+  },
+  github: {
+    client_id: process.env.GITHUB_CLIENT_ID,
+    client_secret: process.env.GITHUB_CLIENT_SECRET,
+    redirect_uri: process.env.GITHUB_REDIRECT_URI,
+    scope: 'read:user user:email',
+    auth_url: 'https://github.com/login/oauth/authorize',
+    token_url: 'https://github.com/login/oauth/access_token',
+    profile_url: 'https://api.github.com/user'
+  },
+  twitch: {
+    client_id: process.env.TWITCH_CLIENT_ID,
+    client_secret: process.env.TWITCH_CLIENT_SECRET,
+    redirect_uri: process.env.TWITCH_REDIRECT_URI,
+    scope: 'user:read:email',
+    auth_url: 'https://id.twitch.tv/oauth2/authorize',
+    token_url: 'https://id.twitch.tv/oauth2/token',
+    profile_url: 'https://api.twitch.tv/helix/users'
+  },
+  youtube: {
+    client_id: process.env.YOUTUBE_CLIENT_ID,
+    client_secret: process.env.YOUTUBE_CLIENT_SECRET,
+    redirect_uri: process.env.YOUTUBE_REDIRECT_URI,
+    scope: 'https://www.googleapis.com/auth/youtube.readonly',
+    auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token_url: 'https://oauth2.googleapis.com/token',
+    profile_url: 'https://www.googleapis.com/oauth2/v1/userinfo?alt=json'
+  }
+};
+
+// =======================
+// GET connections
+// =======================
+router.get('/connections', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const connections = user.connections?.map(c => ({
+      platform: c.platform,
+      username: c.username,
+      display: c.display
+    })) || [];
+
+    res.json({ connections });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// =======================
+// Toggle connection display
+// =======================
+router.post('/connections/:platform/display', auth, async (req, res) => {
+  const { platform } = req.params;
+  const { display } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const conn = user.connections.find(c => c.platform === platform);
+    if (!conn) return res.status(400).json({ error: 'Connection not found' });
+
+    conn.display = !!display;
+    await user.save();
+
+    res.json({ success: true, display: conn.display });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// =======================
+// OAuth Redirect (start)
+// =======================
+router.get('/connect/:platform', auth, (req, res) => {
+  const { platform } = req.params;
+  const cfg = OAUTH_CONFIG[platform];
+  if (!cfg) return res.status(400).send('Invalid platform');
+
+  const params = querystring.stringify({
+    client_id: cfg.client_id,
+    response_type: 'code',
+    redirect_uri: cfg.redirect_uri,
+    scope: cfg.scope
+  });
+
+  res.redirect(`${cfg.auth_url}?${params}`);
+});
+
+// =======================
+// OAuth Callback
+// =======================
+router.get('/connect/callback/:platform', auth, async (req, res) => {
+  const { platform } = req.params;
+  const { code } = req.query;
+
+  if (!code) return res.status(400).send('Missing code');
+  const cfg = OAUTH_CONFIG[platform];
+  if (!cfg) return res.status(400).send('Invalid platform');
+
+  try {
+    let tokenData, username;
+
+    if (platform === 'spotify') {
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: cfg.redirect_uri,
+        client_id: cfg.client_id,
+        client_secret: cfg.client_secret
+      });
+      const tokenRes = await fetch(cfg.token_url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      tokenData = await tokenRes.json();
+
+      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+      const profile = await profileRes.json();
+      username = profile.display_name || profile.id;
+
+    } else if (platform === 'github') {
+      const tokenRes = await fetch(cfg.token_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ client_id: cfg.client_id, client_secret: cfg.client_secret, code })
+      });
+      tokenData = await tokenRes.json();
+
+      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `token ${tokenData.access_token}` } });
+      const profile = await profileRes.json();
+      username = profile.login;
+
+    } else if (platform === 'twitch') {
+      const tokenRes = await fetch(`${cfg.token_url}?client_id=${cfg.client_id}&client_secret=${cfg.client_secret}&code=${code}&grant_type=authorization_code&redirect_uri=${cfg.redirect_uri}`, { method: 'POST' });
+      tokenData = await tokenRes.json();
+
+      const profileRes = await fetch(cfg.profile_url, { headers: { 'Client-ID': cfg.client_id, Authorization: `Bearer ${tokenData.access_token}` } });
+      const profile = await profileRes.json();
+      username = profile.data[0].display_name;
+
+    } else if (platform === 'youtube') {
+      const body = new URLSearchParams({
+        code,
+        client_id: cfg.client_id,
+        client_secret: cfg.client_secret,
+        redirect_uri: cfg.redirect_uri,
+        grant_type: 'authorization_code'
+      });
+      const tokenRes = await fetch(cfg.token_url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      tokenData = await tokenRes.json();
+
+      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+      const profile = await profileRes.json();
+      username = profile.name || profile.email;
+    }
+
+    // Save to user
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).send('User not found');
+
+    const exists = user.connections.find(c => c.platform === platform);
+    if (!exists) {
+      user.connections.push({ platform, username, accessToken: tokenData.access_token, display: true });
+    } else {
+      exists.username = username;
+      exists.accessToken = tokenData.access_token;
+      exists.display = true;
+    }
+
+    await user.save();
+
+    res.send(`<h1>Connected ${platform} as ${username}</h1><p>You can close this window.</p>`);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Failed to connect');
+  }
+});
+
+
+// =======================
 // QR Login Routes
 // =======================
 
@@ -525,11 +727,3 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-
-
-
-
