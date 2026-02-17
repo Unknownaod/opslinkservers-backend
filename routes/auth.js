@@ -416,16 +416,14 @@ router.post('/change-username', auth, async (req, res) => {
 
 
 // =======================
-// Connections Routes
+// Social Connections Routes (UPDATED)
 // =======================
 const querystring = require('querystring');
 const fetch = require('node-fetch');
 
-// Make sure your User schema has:
-// connections: [
-//   { platform: String, username: String, accessToken: String, display: { type: Boolean, default: true } }
-// ]
-
+// =======================
+// OAuth Config
+// =======================
 const OAUTH_CONFIG = {
   spotify: {
     client_id: process.env.SPOTIFY_CLIENT_ID,
@@ -466,56 +464,27 @@ const OAUTH_CONFIG = {
 };
 
 // =======================
-// GET connections
+// GET connected socials
 // =======================
 router.get('/connections', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const connections = user.connections?.map(c => ({
-      platform: c.platform,
-      username: c.username,
-      display: c.display
-    })) || [];
+  const socials = Object.entries(user.socials).map(([platform, data]) => ({
+    platform,
+    connected: data.connected,
+    username: data.username,
+    profileUrl: data.profileUrl
+  }));
 
-    res.json({ connections });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
+  res.json({ socials });
 });
 
 // =======================
-// Toggle connection display
-// =======================
-router.post('/connections/:platform/display', auth, async (req, res) => {
-  const { platform } = req.params;
-  const { display } = req.body;
-
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const conn = user.connections.find(c => c.platform === platform);
-    if (!conn) return res.status(400).json({ error: 'Connection not found' });
-
-    conn.display = !!display;
-    await user.save();
-
-    res.json({ success: true, display: conn.display });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// =======================
-// OAuth Redirect (start)
+// OAuth Start
 // =======================
 router.get('/connect/:platform', auth, (req, res) => {
-  const { platform } = req.params;
-  const cfg = OAUTH_CONFIG[platform];
+  const cfg = OAUTH_CONFIG[req.params.platform];
   if (!cfg) return res.status(400).send('Invalid platform');
 
   const params = querystring.stringify({
@@ -534,14 +503,14 @@ router.get('/connect/:platform', auth, (req, res) => {
 router.get('/connect/callback/:platform', auth, async (req, res) => {
   const { platform } = req.params;
   const { code } = req.query;
-
-  if (!code) return res.status(400).send('Missing code');
   const cfg = OAUTH_CONFIG[platform];
-  if (!cfg) return res.status(400).send('Invalid platform');
+
+  if (!cfg || !code) return res.status(400).send('Invalid request');
 
   try {
-    let tokenData, username;
+    let tokenData, username, profileUrl;
 
+    // ===== Spotify =====
     if (platform === 'spotify') {
       const body = new URLSearchParams({
         grant_type: 'authorization_code',
@@ -550,34 +519,60 @@ router.get('/connect/callback/:platform', auth, async (req, res) => {
         client_id: cfg.client_id,
         client_secret: cfg.client_secret
       });
-      const tokenRes = await fetch(cfg.token_url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+
+      const tokenRes = await fetch(cfg.token_url, { method: 'POST', body });
       tokenData = await tokenRes.json();
 
-      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
-      const profile = await profileRes.json();
-      username = profile.display_name || profile.id;
+      const profile = await fetch(cfg.profile_url, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      }).then(r => r.json());
 
-    } else if (platform === 'github') {
+      username = profile.display_name || profile.id;
+      profileUrl = profile.external_urls.spotify;
+    }
+
+    // ===== GitHub =====
+    if (platform === 'github') {
       const tokenRes = await fetch(cfg.token_url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ client_id: cfg.client_id, client_secret: cfg.client_secret, code })
+        headers: { Accept: 'application/json' },
+        body: JSON.stringify({
+          client_id: cfg.client_id,
+          client_secret: cfg.client_secret,
+          code
+        })
       });
       tokenData = await tokenRes.json();
 
-      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `token ${tokenData.access_token}` } });
-      const profile = await profileRes.json();
-      username = profile.login;
+      const profile = await fetch(cfg.profile_url, {
+        headers: { Authorization: `token ${tokenData.access_token}` }
+      }).then(r => r.json());
 
-    } else if (platform === 'twitch') {
-      const tokenRes = await fetch(`${cfg.token_url}?client_id=${cfg.client_id}&client_secret=${cfg.client_secret}&code=${code}&grant_type=authorization_code&redirect_uri=${cfg.redirect_uri}`, { method: 'POST' });
+      username = profile.login;
+      profileUrl = profile.html_url;
+    }
+
+    // ===== Twitch =====
+    if (platform === 'twitch') {
+      const tokenRes = await fetch(
+        `${cfg.token_url}?client_id=${cfg.client_id}&client_secret=${cfg.client_secret}&code=${code}&grant_type=authorization_code&redirect_uri=${cfg.redirect_uri}`,
+        { method: 'POST' }
+      );
       tokenData = await tokenRes.json();
 
-      const profileRes = await fetch(cfg.profile_url, { headers: { 'Client-ID': cfg.client_id, Authorization: `Bearer ${tokenData.access_token}` } });
-      const profile = await profileRes.json();
-      username = profile.data[0].display_name;
+      const profile = await fetch(cfg.profile_url, {
+        headers: {
+          'Client-ID': cfg.client_id,
+          Authorization: `Bearer ${tokenData.access_token}`
+        }
+      }).then(r => r.json());
 
-    } else if (platform === 'youtube') {
+      username = profile.data[0].display_name;
+      profileUrl = `https://twitch.tv/${profile.data[0].login}`;
+    }
+
+    // ===== YouTube =====
+    if (platform === 'youtube') {
       const body = new URLSearchParams({
         code,
         client_id: cfg.client_id,
@@ -585,36 +580,38 @@ router.get('/connect/callback/:platform', auth, async (req, res) => {
         redirect_uri: cfg.redirect_uri,
         grant_type: 'authorization_code'
       });
-      const tokenRes = await fetch(cfg.token_url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+
+      const tokenRes = await fetch(cfg.token_url, { method: 'POST', body });
       tokenData = await tokenRes.json();
 
-      const profileRes = await fetch(cfg.profile_url, { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
-      const profile = await profileRes.json();
-      username = profile.name || profile.email;
+      const profile = await fetch(cfg.profile_url, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      }).then(r => r.json());
+
+      username = profile.name;
+      profileUrl = `https://youtube.com`;
     }
 
-    // Save to user
+    // ===== Save =====
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).send('User not found');
-
-    const exists = user.connections.find(c => c.platform === platform);
-    if (!exists) {
-      user.connections.push({ platform, username, accessToken: tokenData.access_token, display: true });
-    } else {
-      exists.username = username;
-      exists.accessToken = tokenData.access_token;
-      exists.display = true;
-    }
+    user.socials[platform] = {
+      connected: true,
+      username,
+      profileUrl,
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token
+    };
 
     await user.save();
 
-    res.send(`<h1>Connected ${platform} as ${username}</h1><p>You can close this window.</p>`);
+    res.send(`<h2>${platform} connected as ${username}</h2><p>You can close this tab.</p>`);
 
   } catch (err) {
     console.error(err);
-    res.status(500).send('Failed to connect');
+    res.status(500).send('OAuth failed');
   }
 });
+
 
 
 // =======================
@@ -727,3 +724,4 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
