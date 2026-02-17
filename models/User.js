@@ -2,11 +2,26 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const userSchema = new mongoose.Schema({
+  // =========================
+  // Basic auth info
+  // =========================
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+
+  // =========================
+  // Discord info
+  // =========================
   discordUsername: { type: String, required: true },
-  discordUserID: { type: String, required: true },
   discordTag: { type: String },
+  discordUserID: { type: String, required: true },
+  discordAvatar: { type: String },       // Avatar hash
+  discordStatus: { type: String },       // online, idle, dnd, offline
+  discordActivity: { type: String },     // Playing game / listening / streaming
+  discordBadges: { type: [String], default: [] }, // Array of badge names
+
+  // =========================
+  // User role
+  // =========================
   role: { type: String, enum: ['user','admin','management'], default: 'user' },
 
   // =========================
@@ -15,14 +30,14 @@ const userSchema = new mongoose.Schema({
   isPremium: { type: Boolean, default: false },
 
   // =========================
-  // Email verification fields
+  // Email verification
   // =========================
   isVerified: { type: Boolean, default: true },
   emailVerificationToken: { type: String },
   emailVerificationExpires: { type: Date },
 
   // =========================
-  // Password reset fields
+  // Password reset
   // =========================
   passwordResetToken: { type: String },
   passwordResetExpires: { type: Date },
@@ -30,8 +45,12 @@ const userSchema = new mongoose.Schema({
   // =========================
   // Token version for session invalidation
   // =========================
-  tokenVersion: { type: Number, default: 0 }
-});
+  tokenVersion: { type: Number, default: 0 },
+
+  // =========================
+  // Timestamps
+  // =========================
+}, { timestamps: true });
 
 // =========================
 // Hash password before save
@@ -50,4 +69,3 @@ userSchema.methods.comparePassword = function(pass){
 };
 
 module.exports = mongoose.model('User', userSchema);
-
