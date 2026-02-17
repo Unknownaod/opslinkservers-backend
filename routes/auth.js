@@ -416,10 +416,12 @@ router.post('/change-username', auth, async (req, res) => {
 
 
 // =======================
-// Social Connections Routes (UPDATED)
+// Social Connections Routes (NO AUTH)
 // =======================
 const querystring = require('querystring');
 const fetch = require('node-fetch');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 // =======================
 // OAuth Config
@@ -466,11 +468,21 @@ const OAUTH_CONFIG = {
 // =======================
 // GET connected socials
 // =======================
-router.get('/connections', auth, async (req, res) => {
-  const user = await User.findById(req.user.id);
+router.get('/connections', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  const user = await User.findById(decoded._id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const socials = Object.entries(user.socials).map(([platform, data]) => ({
+  const socials = Object.entries(user.socials || {}).map(([platform, data]) => ({
     platform,
     connected: data.connected,
     username: data.username,
@@ -483,15 +495,27 @@ router.get('/connections', auth, async (req, res) => {
 // =======================
 // OAuth Start
 // =======================
-router.get('/connect/:platform', auth, (req, res) => {
-  const cfg = OAUTH_CONFIG[req.params.platform];
+router.get('/connect/:platform', (req, res) => {
+  const { platform } = req.params;
+  const { token } = req.query;
+
+  if (!token) return res.status(401).send('Unauthorized');
+
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).send('Invalid token');
+  }
+
+  const cfg = OAUTH_CONFIG[platform];
   if (!cfg) return res.status(400).send('Invalid platform');
 
   const params = querystring.stringify({
     client_id: cfg.client_id,
     response_type: 'code',
     redirect_uri: cfg.redirect_uri,
-    scope: cfg.scope
+    scope: cfg.scope,
+    state: token // pass JWT through OAuth
   });
 
   res.redirect(`${cfg.auth_url}?${params}`);
@@ -500,11 +524,23 @@ router.get('/connect/:platform', auth, (req, res) => {
 // =======================
 // OAuth Callback
 // =======================
-router.get('/connect/callback/:platform', auth, async (req, res) => {
+router.get('/connect/callback/:platform', async (req, res) => {
   const { platform } = req.params;
-  const { code } = req.query;
-  const cfg = OAUTH_CONFIG[platform];
+  const { code, state } = req.query;
 
+  if (!state) return res.status(401).send('Unauthorized');
+
+  let decoded;
+  try {
+    decoded = jwt.verify(state, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).send('Invalid token');
+  }
+
+  const user = await User.findById(decoded._id);
+  if (!user) return res.status(404).send('User not found');
+
+  const cfg = OAUTH_CONFIG[platform];
   if (!cfg || !code) return res.status(400).send('Invalid request');
 
   try {
@@ -593,7 +629,8 @@ router.get('/connect/callback/:platform', auth, async (req, res) => {
     }
 
     // ===== Save =====
-    const user = await User.findById(req.user.id);
+    user.socials = user.socials || {};
+
     user.socials[platform] = {
       connected: true,
       username,
@@ -604,7 +641,10 @@ router.get('/connect/callback/:platform', auth, async (req, res) => {
 
     await user.save();
 
-    res.send(`<h2>${platform} connected as ${username}</h2><p>You can close this tab.</p>`);
+    res.send(`
+      <h2>${platform} connected as ${username}</h2>
+      <script>window.close();</script>
+    `);
 
   } catch (err) {
     console.error(err);
@@ -724,4 +764,5 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
