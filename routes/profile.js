@@ -35,60 +35,85 @@ router.get('/connections', auth, async (req, res) => {
   }
 });
 
-
 /**
  * ==========================================
- * GET /api/profile/:id?  (also serves frontend)
+ * GET /api/profile
+ * GET /api/profile/:id
  * ==========================================
  */
-router.get('/:id?', auth, async (req, res) => {
+
+router.get('/:id?', async (req, res) => {
   try {
     const { id } = req.params;
-    const requester = req.user;
-    if (!requester) return res.status(401).json({ message: 'Unauthorized' });
+
+    // Try to authenticate user (optional for public profiles)
+    let requester = null;
+    try {
+      if (req.headers.authorization) {
+        const token = req.headers.authorization.split(' ')[1];
+        requester = await verifyToken(token); // use your JWT verify function
+      }
+    } catch (err) {
+      requester = null;
+    }
 
     let user;
 
-    // If no ID → current user
+    // ==========================
+    // NO ID → must be logged in
+    // ==========================
     if (!id) {
+      if (!requester) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
       user = await User.findById(requester._id).lean();
     } else {
-      // Prevent invalid IDs from crashing
+      // Validate ID
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'Invalid user ID' });
       }
+
       user = await User.findById(id).lean();
     }
 
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    // Check if this request comes from the browser (HTML) or API (JSON)
-    const acceptsHTML = req.headers.accept && req.headers.accept.includes('text/html');
+    // =====================================
+    // If browser requesting HTML → serve page
+    // =====================================
+    const acceptsHTML =
+      req.headers.accept && req.headers.accept.includes('text/html');
+
     if (acceptsHTML) {
-      // Serve the frontend profile page from /profile/index.html
-      return res.sendFile(path.join(__dirname, '../profile/'));
+      return res.sendFile(path.join(__dirname, '../profile/index.html'));
     }
 
     // ===========================
-    // API response (JSON)
+    // JSON API response
     // ===========================
-    const isSelf = requester._id.toString() === user._id.toString();
-    const isAdmin = requester.role === 'admin';
+    const isSelf =
+      requester && requester._id.toString() === user._id.toString();
+
+    const isAdmin = requester && requester.role === 'admin';
 
     const response = {
       _id: user._id,
       discordUsername: user.discordUsername || '',
       discordTag: user.discordTag || '',
       role: user.role || 'user',
+      isVerified: user.isVerified || false,
     };
 
+    // Only self or admin can see private data
     if (isSelf || isAdmin) {
       response.email = user.email || '';
-      response.isVerified = user.isVerified || false;
       response.discordUserID = user.discordUserID || '';
     }
 
-    // Socials
+    // Socials (public)
     const socials = await Social.find({ user: user._id }).lean();
     response.socials = socials.map(s => ({
       _id: s._id,
@@ -97,7 +122,7 @@ router.get('/:id?', auth, async (req, res) => {
       url: s.url,
     }));
 
-    // Discord widget
+    // Discord widget (safe public info only)
     if (user.discordUserID) {
       const avatarHash = user.discordAvatar || '';
       response.discordWidget = {
@@ -118,6 +143,7 @@ router.get('/:id?', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 /**
  * ==========================================
