@@ -447,8 +447,34 @@ router.post('/sponsor/:id', async (req, res) => {
   res.json({success: true, sponsored: server.sponsored});
 });
 
+// ============================
+// PUBLIC ROUTES
+// ============================
+
+// Get all approved servers submitted by a specific user (public)
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Validate userId as a proper Mongo ObjectId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    // Fetch only approved servers for that user
+    const servers = await Server.find({ submitter: userId, status: 'approved' }).lean();
+
+    res.json(servers);
+  } catch (err) {
+    console.error('Failed to fetch user servers:', err);
+    res.status(500).json({ error: 'Failed to fetch user servers' });
+  }
+});
+
+
 
 module.exports = router;
+
 
 
 
