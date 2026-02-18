@@ -32,13 +32,24 @@ async function optionalAuth(req) {
 
 /**
  * ==========================================
- * GET /api/profile/connections
- * (Protected)
+ * GET /api/profile/:id?/connections
+ * (Public for others, Protected for own)
  * ==========================================
  */
-router.get('/connections', auth, async (req, res) => {
+router.get('/:id?/connections', async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id).lean();
+    let userId = req.params.id;
+
+    // If no ID provided, fallback to authenticated user
+    if (!userId) {
+      // Require auth if trying to fetch own connections
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required to view your connections.' });
+      }
+      userId = req.user._id;
+    }
+
+    const user = await User.findById(userId).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const socialsObject = user.socials || {};
