@@ -859,6 +859,17 @@ try {
   throw new Error('Connection rolled back due to database failure.');
 }
 
+    
+    // Success response after saving
+    return res.redirect(`${process.env.FRONTEND_URL}/connections.html`);
+
+  } catch (err) {
+    console.error('OAuth callback failed:', err);
+    return res.redirect(`${process.env.FRONTEND_URL}/connections-error.html`);
+  }
+
+});
+
 // =======================
 // DELETE Disconnect platform (for all platforms)
 // =======================
@@ -952,18 +963,6 @@ router.delete('/connections/:platform', async (req, res) => {
     res.status(500).json({ error: 'Failed to disconnect platform' });
   }
 });
-
-
-    // Success response after saving
-    return res.redirect(`${process.env.FRONTEND_URL}/connections.html`);
-
-  } catch (err) {
-    console.error('OAuth callback failed:', err);
-    return res.redirect(`${process.env.FRONTEND_URL}/connections-error.html`);
-  }
-
-});
-
 
 // =======================
 // QR Login Routes
@@ -1075,6 +1074,7 @@ router.post('/qr-subscribe', (req, res) => {
 });
 
 module.exports = router;
+
 
 
 
