@@ -36,30 +36,50 @@ async function optionalAuth(req) {
  * (Public for others, Protected for own)
  * ==========================================
  */
-router.get('/:id?/connections', async (req, res, next) => {
+router.get('/:id?/connections', async (req, res) => {
   try {
-    let userId = req.params.id;
+    const { id } = req.params;
+    const requester = await optionalAuth(req);
 
-    // If no ID provided, fallback to authenticated user
+    let userId = id;
+    let isOwner = false;
+
     if (!userId) {
-      // Require auth if trying to fetch own connections
-      if (!req.user) {
-        return res.status(401).json({ error: 'Authentication required to view your connections.' });
-      }
-      userId = req.user._id;
+      if (!requester) return res.status(401).json({ error: 'Authentication required.' });
+      userId = requester._id;
+      isOwner = true;
+    } else if (requester && requester._id.toString() === userId) {
+      isOwner = true;
     }
 
     const user = await User.findById(userId).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const socialsObject = user.socials || {};
+    let socials = [];
 
-    const socials = Object.entries(socialsObject).map(([platform, data]) => ({
-      platform,
-      connected: data.connected || false,
-      username: data.username || '',
-      profileUrl: data.profileUrl || ''
-    }));
+    // 1️⃣ Include OAuth socials (Spotify, Twitch, GitHub, YouTube)
+    const oauthSocials = user.socials || {};
+    for (const [platform, data] of Object.entries(oauthSocials)) {
+      if (data.connected) {
+        socials.push({
+          platform,
+          connected: true,
+          username: data.username || '',
+          profileUrl: data.profileUrl || ''
+        });
+      }
+    }
+
+    // 2️⃣ Include normal socials (TikTok, Twitter, Instagram, etc.)
+    const publicSocials = await Social.find({ user: user._id }).lean();
+    publicSocials.forEach(s => {
+      socials.push({
+        platform: s.platform,
+        connected: true,
+        username: s.handle,
+        profileUrl: s.url
+      });
+    });
 
     res.json({ socials });
 
