@@ -1,6 +1,8 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const path = require('path');
 const User = require('../models/User');
 const Social = require('../models/Social');
 
@@ -8,8 +10,30 @@ const router = express.Router();
 
 /**
  * ==========================================
+ * OPTIONAL AUTH MIDDLEWARE (internal use)
+ * ==========================================
+ */
+async function optionalAuth(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : null;
+
+  if (!token) return null;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    return user || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ==========================================
  * GET /api/profile/connections
- * Returns OAuth-connected platforms
+ * (Protected)
  * ==========================================
  */
 router.get('/connections', auth, async (req, res) => {
@@ -17,7 +41,6 @@ router.get('/connections', auth, async (req, res) => {
     const user = await User.findById(req.user._id).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // If you store OAuth socials inside user.socials object
     const socialsObject = user.socials || {};
 
     const socials = Object.entries(socialsObject).map(([platform, data]) => ({
@@ -41,26 +64,15 @@ router.get('/connections', auth, async (req, res) => {
  * GET /api/profile/:id
  * ==========================================
  */
-
 router.get('/:id?', async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Try to authenticate user (optional for public profiles)
-    let requester = null;
-    try {
-      if (req.headers.authorization) {
-        const token = req.headers.authorization.split(' ')[1];
-        requester = await verifyToken(token); // use your JWT verify function
-      }
-    } catch (err) {
-      requester = null;
-    }
+    const requester = await optionalAuth(req);
 
     let user;
 
     // ==========================
-    // NO ID → must be logged in
+    // OWN PROFILE (requires login)
     // ==========================
     if (!id) {
       if (!requester) {
@@ -68,8 +80,11 @@ router.get('/:id?', async (req, res) => {
       }
 
       user = await User.findById(requester._id).lean();
-    } else {
-      // Validate ID
+    }
+    // ==========================
+    // PUBLIC PROFILE
+    // ==========================
+    else {
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'Invalid user ID' });
       }
@@ -81,9 +96,7 @@ router.get('/:id?', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // =====================================
-    // If browser requesting HTML → serve page
-    // =====================================
+    // Serve frontend if browser request
     const acceptsHTML =
       req.headers.accept && req.headers.accept.includes('text/html');
 
@@ -91,13 +104,11 @@ router.get('/:id?', async (req, res) => {
       return res.sendFile(path.join(__dirname, '../profile/index.html'));
     }
 
-    // ===========================
-    // JSON API response
-    // ===========================
     const isSelf =
       requester && requester._id.toString() === user._id.toString();
 
-    const isAdmin = requester && requester.role === 'admin';
+    const isAdmin =
+      requester && requester.role === 'admin';
 
     const response = {
       _id: user._id,
@@ -107,13 +118,13 @@ router.get('/:id?', async (req, res) => {
       isVerified: user.isVerified || false,
     };
 
-    // Only self or admin can see private data
+    // Private fields
     if (isSelf || isAdmin) {
       response.email = user.email || '';
       response.discordUserID = user.discordUserID || '';
     }
 
-    // Socials (public)
+    // Public socials
     const socials = await Social.find({ user: user._id }).lean();
     response.socials = socials.map(s => ({
       _id: s._id,
@@ -122,7 +133,7 @@ router.get('/:id?', async (req, res) => {
       url: s.url,
     }));
 
-    // Discord widget (safe public info only)
+    // Discord widget (safe info)
     if (user.discordUserID) {
       const avatarHash = user.discordAvatar || '';
       response.discordWidget = {
@@ -144,10 +155,10 @@ router.get('/:id?', async (req, res) => {
   }
 });
 
-
 /**
  * ==========================================
  * POST /api/profile/socials/add
+ * (Protected)
  * ==========================================
  */
 router.post('/socials/add', auth, async (req, res) => {
@@ -188,10 +199,10 @@ router.post('/socials/add', auth, async (req, res) => {
   }
 });
 
-
 /**
  * ==========================================
  * DELETE /api/profile/socials/delete/:id
+ * (Protected)
  * ==========================================
  */
 router.delete('/socials/delete/:id', auth, async (req, res) => {
@@ -219,7 +230,5 @@ router.delete('/socials/delete/:id', auth, async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
-
-
 
 module.exports = router;
