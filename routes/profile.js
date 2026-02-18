@@ -38,7 +38,7 @@ router.get('/connections', auth, async (req, res) => {
 
 /**
  * ==========================================
- * GET /api/profile/:id?
+ * GET /api/profile/:id?  (also serves frontend)
  * ==========================================
  */
 router.get('/:id?', auth, async (req, res) => {
@@ -53,7 +53,7 @@ router.get('/:id?', auth, async (req, res) => {
     if (!id) {
       user = await User.findById(requester._id).lean();
     } else {
-      // Prevent "connections" or invalid IDs from crashing
+      // Prevent invalid IDs from crashing
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'Invalid user ID' });
       }
@@ -62,6 +62,16 @@ router.get('/:id?', auth, async (req, res) => {
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    // Check if this request comes from the browser (HTML) or API (JSON)
+    const acceptsHTML = req.headers.accept && req.headers.accept.includes('text/html');
+    if (acceptsHTML) {
+      // Serve the frontend profile page from /profile/index.html
+      return res.sendFile(path.join(__dirname, '../profile/'));
+    }
+
+    // ===========================
+    // API response (JSON)
+    // ===========================
     const isSelf = requester._id.toString() === user._id.toString();
     const isAdmin = requester.role === 'admin';
 
@@ -78,7 +88,7 @@ router.get('/:id?', auth, async (req, res) => {
       response.discordUserID = user.discordUserID || '';
     }
 
-    // Manual socials collection
+    // Socials
     const socials = await Social.find({ user: user._id }).lean();
     response.socials = socials.map(s => ({
       _id: s._id,
@@ -108,7 +118,6 @@ router.get('/:id?', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
 
 /**
  * ==========================================
