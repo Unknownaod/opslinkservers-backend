@@ -1076,13 +1076,14 @@ router.post('/qr-subscribe', (req, res) => {
 // =======================
 // Discord OAuth Start
 // =======================
-router.get('/discord', (req, res) => {
+router.get("/discord", (req, res) => {
 
   const url =
-    `https://discord.com/oauth2/authorize` +
+    "https://discord.com/oauth2/authorize" +
     `?client_id=${process.env.DISCORD_CLIENT_ID}` +
-    `&response_type=code` +
-    `&scope=identify%20email` +
+    "&response_type=code" +
+    "&scope=identify%20email" +
+    "&prompt=consent" +
     `&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI)}`;
 
   res.redirect(url);
@@ -1090,65 +1091,104 @@ router.get('/discord', (req, res) => {
 });
 
 // =======================
-// Discord OAuth Callback (signup style)
+// Discord OAuth Callback
 // =======================
-router.get('/discord/callback', async (req, res) => {
+router.get("/discord/callback", async (req, res) => {
+
   const { code } = req.query;
-  if (!code) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=missing_code`);
+
+  if (!code) {
+    return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=missing_code`);
+  }
 
   try {
+
+    // =======================
     // Exchange code for token
+    // =======================
     const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
       body: new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
         grant_type: "authorization_code",
-        code,
-        redirect_uri: process.env.DISCORD_REDIRECT_URI
+        code: code,
+        redirect_uri: process.env.DISCORD_REDIRECT_URI,
+        scope: "identify email"
       })
     });
 
-    const tokenData = await tokenRes.json();
+    const text = await tokenRes.text();
+
+    let tokenData;
+    try {
+      tokenData = JSON.parse(text);
+    } catch {
+      console.error("Discord returned non JSON:", text);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_invalid_response`);
+    }
+
     if (!tokenData.access_token) {
       console.error("Discord token error:", tokenData);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_failed`);
     }
 
+    // =======================
     // Fetch Discord profile
+    // =======================
     const profileRes = await fetch("https://discord.com/api/users/@me", {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`
+      }
     });
+
     const discord = await profileRes.json();
 
     const discordID = discord.id;
     const discordUsername = discord.username;
+
     const discordTag =
       discord.discriminator && discord.discriminator !== "0"
         ? `${discord.username}#${discord.discriminator}`
         : discord.username;
+
     const email = discord.email;
 
-    // Required fields check
+    // =======================
+    // Required field check
+    // =======================
     if (!discordID || !discordUsername || !email) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_missing_fields`);
     }
 
+    // =======================
     // Duplicate checks
+    // =======================
     const duplicateDiscord = await User.findOne({ discordUserID: discordID });
-    if (duplicateDiscord) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_exists`);
+    if (duplicateDiscord) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_exists`);
+    }
 
     const duplicateEmail = await User.findOne({ email });
-    if (duplicateEmail) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=email_exists`);
+    if (duplicateEmail) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=email_exists`);
+    }
 
     const duplicateUsername = await User.findOne({ discordUsername });
-    if (duplicateUsername) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=username_exists`);
+    if (duplicateUsername) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=username_exists`);
+    }
 
-    // Create new user (auto-verified since Discord OAuth)
+    // =======================
+    // Create user
+    // =======================
     const user = new User({
       email,
-      password: crypto.randomBytes(32).toString("hex"), // random password
+      password: crypto.randomBytes(32).toString("hex"),
       discordUsername,
       discordUserID: discordID,
       discordTag,
@@ -1157,15 +1197,19 @@ router.get('/discord/callback', async (req, res) => {
 
     await user.save();
 
-    // Redirect back to signup page with success
+    // =======================
+    // Success redirect
+    // =======================
     res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?success=discord_created`);
 
   } catch (err) {
+
     console.error("Discord OAuth error:", err);
+
     res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_failed`);
+
   }
+
 });
 
 module.exports = router;
-
-
