@@ -1090,11 +1090,11 @@ router.get("/discord", (req, res) => {
 
 });
 
+
 // =======================
 // Discord OAuth Callback
 // =======================
 router.get("/discord/callback", async (req, res) => {
-
   const { code } = req.query;
 
   if (!code) {
@@ -1102,7 +1102,6 @@ router.get("/discord/callback", async (req, res) => {
   }
 
   try {
-
     // =======================
     // Exchange code for token
     // =======================
@@ -1110,7 +1109,7 @@ router.get("/discord/callback", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json"
+        "Accept": "application/json",
       },
       body: new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
@@ -1118,22 +1117,19 @@ router.get("/discord/callback", async (req, res) => {
         grant_type: "authorization_code",
         code: code,
         redirect_uri: process.env.DISCORD_REDIRECT_URI,
-        scope: "identify email"
-      })
+      }),
     });
 
-    const text = await tokenRes.text();
-
-    let tokenData;
-    try {
-      tokenData = JSON.parse(text);
-    } catch {
-      console.error("Discord returned non JSON:", text);
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_invalid_response`);
+    if (!tokenRes.ok) {
+      const text = await tokenRes.text();
+      console.error("Discord token response error:", tokenRes.status, text);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_failed`);
     }
 
+    const tokenData = await tokenRes.json();
+
     if (!tokenData.access_token) {
-      console.error("Discord token error:", tokenData);
+      console.error("Discord token missing access_token:", tokenData);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_failed`);
     }
 
@@ -1142,25 +1138,25 @@ router.get("/discord/callback", async (req, res) => {
     // =======================
     const profileRes = await fetch("https://discord.com/api/users/@me", {
       headers: {
-        Authorization: `Bearer ${tokenData.access_token}`
-      }
+        Authorization: `Bearer ${tokenData.access_token}`,
+      },
     });
 
-    const discord = await profileRes.json();
+    if (!profileRes.ok) {
+      const text = await profileRes.text();
+      console.error("Discord profile fetch failed:", profileRes.status, text);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_failed`);
+    }
 
+    const discord = await profileRes.json();
     const discordID = discord.id;
     const discordUsername = discord.username;
-
     const discordTag =
       discord.discriminator && discord.discriminator !== "0"
         ? `${discord.username}#${discord.discriminator}`
         : discord.username;
-
     const email = discord.email;
 
-    // =======================
-    // Required field check
-    // =======================
     if (!discordID || !discordUsername || !email) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_missing_fields`);
     }
@@ -1178,38 +1174,46 @@ router.get("/discord/callback", async (req, res) => {
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=email_exists`);
     }
 
-    const duplicateUsername = await User.findOne({ discordUsername });
+    const duplicateUsername = await User.findOne({ discordUsername: discordUsername });
     if (duplicateUsername) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=username_exists`);
     }
 
     // =======================
-    // Create user
+    // Generate secure password
+    // =======================
+    const randomPassword = crypto.randomBytes(32).toString("hex");
+    const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+    // =======================
+    // Create user (verified immediately)
     // =======================
     const user = new User({
       email,
-      password: crypto.randomBytes(32).toString("hex"),
+      password: hashedPassword,
       discordUsername,
       discordUserID: discordID,
       discordTag,
-      isVerified: true
+      isVerified: true, // OAuth users are trusted
     });
 
     await user.save();
 
     // =======================
-    // Success redirect
+    // Success redirect with password
     // =======================
-    res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?success=discord_created`);
+    // Send as query params (frontend can capture)
+    const redirectURL = new URL(`${process.env.FRONTEND_URL}/auth/signup/`);
+    redirectURL.searchParams.set("success", "discord_created");
+    redirectURL.searchParams.set("email", email);
+    redirectURL.searchParams.set("password", randomPassword);
+
+    res.redirect(redirectURL.toString());
 
   } catch (err) {
-
     console.error("Discord OAuth error:", err);
-
     res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_failed`);
-
   }
-
 });
 
 module.exports = router;
