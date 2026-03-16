@@ -1094,7 +1094,7 @@ router.get('/discord', (req, res) => {
 // =======================
 router.get('/discord/callback', async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.redirect(`${process.env.FRONTEND_URL}//auth/signup/?error=missing_code`);
+  if (!code) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=missing_code`);
 
   try {
     // Exchange code for token
@@ -1109,7 +1109,12 @@ router.get('/discord/callback', async (req, res) => {
         redirect_uri: process.env.DISCORD_REDIRECT_URI
       })
     });
+
     const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) {
+      console.error("Discord token error:", tokenData);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_failed`);
+    }
 
     // Fetch Discord profile
     const profileRes = await fetch("https://discord.com/api/users/@me", {
@@ -1120,24 +1125,30 @@ router.get('/discord/callback', async (req, res) => {
     const discordID = discord.id;
     const discordUsername = discord.username;
     const discordTag =
-      discord.discriminator !== "0"
+      discord.discriminator && discord.discriminator !== "0"
         ? `${discord.username}#${discord.discriminator}`
         : discord.username;
     const email = discord.email;
 
-    // Check for existing Discord ID or email
+    // Required fields check
+    if (!discordID || !discordUsername || !email) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_missing_fields`);
+    }
+
+    // Duplicate checks
     const duplicateDiscord = await User.findOne({ discordUserID: discordID });
-    if (duplicateDiscord)
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_exists`);
+    if (duplicateDiscord) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_exists`);
 
     const duplicateEmail = await User.findOne({ email });
-    if (duplicateEmail)
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=email_exists`);
+    if (duplicateEmail) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=email_exists`);
 
-    // Create new user (auto-verified)
+    const duplicateUsername = await User.findOne({ discordUsername });
+    if (duplicateUsername) return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=username_exists`);
+
+    // Create new user (auto-verified since Discord OAuth)
     const user = new User({
       email,
-      password: crypto.randomBytes(32).toString("hex"),
+      password: crypto.randomBytes(32).toString("hex"), // random password
       discordUsername,
       discordUserID: discordID,
       discordTag,
@@ -1146,7 +1157,7 @@ router.get('/discord/callback', async (req, res) => {
 
     await user.save();
 
-    // Redirect back to signup page with success message
+    // Redirect back to signup page with success
     res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?success=discord_created`);
 
   } catch (err) {
