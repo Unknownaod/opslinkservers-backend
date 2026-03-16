@@ -1101,26 +1101,36 @@ router.get("/discord/callback", async (req, res) => {
   }
 
   try {
+
     // =======================
     // Exchange code for token
     // =======================
-    const params = new URLSearchParams();
-    params.append("client_id", process.env.DISCORD_CLIENT_ID);
-    params.append("client_secret", process.env.DISCORD_CLIENT_SECRET);
-    params.append("grant_type", "authorization_code");
-    params.append("code", code);
-    params.append("redirect_uri", process.env.DISCORD_REDIRECT_URI);
-    params.append("scope", "identify email");
+    const params = new URLSearchParams({
+      client_id: process.env.DISCORD_CLIENT_ID,
+      client_secret: process.env.DISCORD_CLIENT_SECRET,
+      grant_type: "authorization_code",
+      code: code,
+      redirect_uri: process.env.DISCORD_REDIRECT_URI
+    });
 
     const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
       },
-      body: params
+      body: params.toString()
     });
 
-    const tokenData = await tokenRes.json();
+    const rawToken = await tokenRes.text();
+
+    let tokenData;
+    try {
+      tokenData = JSON.parse(rawToken);
+    } catch (err) {
+      console.error("Discord returned non-JSON token response:", rawToken);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_invalid`);
+    }
 
     if (!tokenRes.ok) {
       console.error("Discord token error:", tokenData);
@@ -1137,11 +1147,20 @@ router.get("/discord/callback", async (req, res) => {
     // =======================
     const profileRes = await fetch("https://discord.com/api/users/@me", {
       headers: {
-        Authorization: `Bearer ${tokenData.access_token}`
+        Authorization: `Bearer ${tokenData.access_token}`,
+        Accept: "application/json"
       }
     });
 
-    const discord = await profileRes.json();
+    const rawProfile = await profileRes.text();
+
+    let discord;
+    try {
+      discord = JSON.parse(rawProfile);
+    } catch (err) {
+      console.error("Discord profile returned non-JSON:", rawProfile);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_invalid`);
+    }
 
     if (!profileRes.ok) {
       console.error("Discord profile error:", discord);
@@ -1150,6 +1169,7 @@ router.get("/discord/callback", async (req, res) => {
 
     const discordID = discord.id;
     const discordUsername = discord.username;
+
     const discordTag =
       discord.discriminator && discord.discriminator !== "0"
         ? `${discord.username}#${discord.discriminator}`
