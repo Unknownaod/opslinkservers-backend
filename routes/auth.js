@@ -186,21 +186,25 @@ router.post('/resend-verification', async (req, res) => {
 });
 
 // =======================
-// Change Email (Before Verification)
+// Change Email
 // =======================
-router.post('/change-email', async (req, res) => {
-  const { oldEmail, newEmail } = req.body;
+router.post('/change-email', auth, async (req, res) => {
+  const { newEmail } = req.body;
 
-  if (!oldEmail || !newEmail)
-    return res.status(400).json({ error: 'Both emails required' });
+  if (!newEmail)
+    return res.status(400).json({ error: 'New email required' });
 
   try {
-    const user = await User.findOne({ email: oldEmail });
+    const user = await User.findById(req.user.id);
 
-    if (!user) return res.status(404).json({ error: 'Account not found' });
-    if (user.isVerified)
-      return res.status(400).json({ error: 'Email already verified' });
+    if (!user)
+      return res.status(404).json({ error: 'Account not found' });
 
+    // prevent same email
+    if (user.email === newEmail)
+      return res.status(400).json({ error: 'That is already your email' });
+
+    // check if already used
     const emailExists = await User.findOne({ email: newEmail });
     if (emailExists)
       return res.status(400).json({ error: 'Email already in use' });
@@ -208,25 +212,29 @@ router.post('/change-email', async (req, res) => {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 
-    user.email = newEmail;
+    user.pendingEmail = newEmail;
     user.emailVerificationToken = verificationToken;
     user.emailVerificationExpires = verificationExpires;
+
     await user.save();
 
     const verifyURL = `https://opslinkservers-backend.onrender.com/api/auth/verify-email?token=${verificationToken}`;
 
     await sendEmail({
       to: newEmail,
-      subject: 'Verify Your OpsLink Account',
+      subject: 'Confirm Your New Email',
       html: generateEmailHTML(
-        "Email Updated",
-        "Please verify your new email by clicking the button below:",
+        "Confirm Email Change",
+        "Click below to confirm your new email address:",
         "Verify Email",
         verifyURL
       )
     });
 
-    res.json({ success: true, message: 'Email updated and verification resent' });
+    res.json({
+      success: true,
+      message: 'Verification sent to new email'
+    });
 
   } catch (err) {
     console.error(err);
@@ -239,7 +247,9 @@ router.post('/change-email', async (req, res) => {
 // =======================
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
-  if (!token) return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
+
+  if (!token)
+    return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
 
   try {
     const user = await User.findOne({
@@ -251,7 +261,15 @@ router.get('/verify-email', async (req, res) => {
       return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
     }
 
+    if (user.pendingEmail) {
+      user.email = user.pendingEmail;
+      user.pendingEmail = undefined;
+    }
+
+    // mark verified
     user.isVerified = true;
+
+    // cleanup token
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
 
