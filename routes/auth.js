@@ -186,25 +186,20 @@ router.post('/resend-verification', async (req, res) => {
 });
 
 // =======================
-// Change Email
+// Change Email (Before Verification / Reverify)
 // =======================
-router.post('/change-email', auth, async (req, res) => {
-  const { newEmail } = req.body;
+router.post('/change-email', async (req, res) => {
+  const { oldEmail, newEmail } = req.body;
 
-  if (!newEmail)
-    return res.status(400).json({ error: 'New email required' });
+  if (!oldEmail || !newEmail)
+    return res.status(400).json({ error: 'Both emails required' });
 
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findOne({ email: oldEmail });
 
-    if (!user)
-      return res.status(404).json({ error: 'Account not found' });
+    if (!user) return res.status(404).json({ error: 'Account not found' });
 
-    // prevent same email
-    if (user.email === newEmail)
-      return res.status(400).json({ error: 'That is already your email' });
-
-    // check if already used
+    // Check if the new email is already used by someone else
     const emailExists = await User.findOne({ email: newEmail });
     if (emailExists)
       return res.status(400).json({ error: 'Email already in use' });
@@ -212,7 +207,9 @@ router.post('/change-email', auth, async (req, res) => {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 
-    user.pendingEmail = newEmail;
+    // ✅ Always update email, force reverify
+    user.email = newEmail;
+    user.isVerified = false; // mark unverified
     user.emailVerificationToken = verificationToken;
     user.emailVerificationExpires = verificationExpires;
 
@@ -222,19 +219,16 @@ router.post('/change-email', auth, async (req, res) => {
 
     await sendEmail({
       to: newEmail,
-      subject: 'Confirm Your New Email',
+      subject: 'Verify Your OpsLink Account',
       html: generateEmailHTML(
-        "Confirm Email Change",
-        "Click below to confirm your new email address:",
+        "Email Updated",
+        "Please verify your new email by clicking the button below:",
         "Verify Email",
         verifyURL
       )
     });
 
-    res.json({
-      success: true,
-      message: 'Verification sent to new email'
-    });
+    res.json({ success: true, message: 'Email updated. Please verify your new email.' });
 
   } catch (err) {
     console.error(err);
@@ -247,9 +241,7 @@ router.post('/change-email', auth, async (req, res) => {
 // =======================
 router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
-
-  if (!token)
-    return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
+  if (!token) return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
 
   try {
     const user = await User.findOne({
@@ -257,16 +249,9 @@ router.get('/verify-email', async (req, res) => {
       emailVerificationExpires: { $gt: Date.now() }
     });
 
-    if (!user) {
-      return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
-    }
+    if (!user) return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
 
-    if (user.pendingEmail) {
-      user.email = user.pendingEmail;
-      user.pendingEmail = undefined;
-    }
-
-    // mark verified
+    // ✅ mark verified
     user.isVerified = true;
 
     // cleanup token
@@ -276,7 +261,6 @@ router.get('/verify-email', async (req, res) => {
     await user.save();
 
     res.redirect(`${process.env.FRONTEND_URL}/verified.html`);
-
   } catch (err) {
     console.error(err);
     res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
