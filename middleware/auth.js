@@ -23,11 +23,6 @@ module.exports = async (req, res, next) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    /**
-     * 🔑 BACKWARD-COMPAT LOGIC
-     * - Old tokens: decoded.tokenVersion === undefined → allow
-     * - New tokens: must match user.tokenVersion
-     */
     if (
       typeof decoded.tokenVersion !== 'undefined' &&
       decoded.tokenVersion !== user.tokenVersion
@@ -37,16 +32,15 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // Attach user info and shareable ID/token to req.user
     req.user = {
-      _id: user._id,          // Shareable user ID
-      email: user.email,      // Optional: show only if needed
+      _id: user._id,         
+      email: user.email,     
       discordUsername: user.discordUsername,
       discordTag: user.discordTag,
       role: user.role,
       isVerified: user.isVerified,
       tokenVersion: user.tokenVersion,
-      token: token            // Keep the raw token if you want
+      token: token           
     };
 
     next();
