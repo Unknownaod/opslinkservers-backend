@@ -291,12 +291,17 @@ By: ${req.user.discordUsername}`
 });
 
 // Update member count (bot)
+/*
 router.patch('/:discordServerId/updateMembers', async (req, res) => {
   try {
-    if (isNaN(req.body.members)) return res.status(400).json({ error: 'Invalid members count.' });
+    if (isNaN(req.body.members)) {
+      return res.status(400).json({ error: 'Invalid members count.' });
+    }
 
     const server = await Server.findOne({ discordServerId: req.params.discordServerId });
-    if (!server) return res.status(404).json({ error: 'Server not found' });
+    if (!server) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
 
     server.members = Number(req.body.members);
     await server.save();
@@ -307,10 +312,10 @@ router.patch('/:discordServerId/updateMembers', async (req, res) => {
     res.status(500).json({ error: 'Member update failed.' });
   }
 });
+*/
 
 // Delete server (management only)
 router.delete('/:id', auth, adminAuth, async (req, res) => {
-  // ⛔ extra safety: only management can delete
   if (req.user.role !== 'management') {
     return res.status(403).json({ error: 'Access denied. Management only.' });
   }
