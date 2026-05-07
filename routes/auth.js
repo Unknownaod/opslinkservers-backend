@@ -207,7 +207,7 @@ router.post('/change-email', async (req, res) => {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = Date.now() + 24 * 60 * 60 * 1000;
 
-    // ✅ Always update email, force reverify
+    // Always update email, force reverify
     user.email = newEmail;
     user.isVerified = false; // mark unverified
     user.emailVerificationToken = verificationToken;
@@ -251,7 +251,7 @@ router.get('/verify-email', async (req, res) => {
 
     if (!user) return res.redirect(`${process.env.FRONTEND_URL}/verify-failed.html`);
 
-    // ✅ mark verified
+    // mark verified
     user.isVerified = true;
 
     // cleanup token
@@ -624,7 +624,7 @@ if (platform === 'spotify') {
     console.error('Spotify OAuth failure:', err.message);
 
     // =========================
-    // 🔥 AUTO REVOKE TOKEN IF ISSUED
+    // AUTO REVOKE TOKEN IF ISSUED
     // =========================
     if (issuedAccessToken) {
       try {
@@ -687,7 +687,7 @@ if (platform === 'github') {
   profileUrl = profile.html_url;
 }
 
-// ===== Twitch (HARDENED) =====
+// ===== Twitch =====
 if (platform === 'twitch') {
 
   let issuedAccessToken = null;
@@ -749,7 +749,7 @@ if (platform === 'youtube') {
   let issuedAccessToken = null;
 
   try {
-    // 1️⃣ Exchange authorization code for access token
+    // Exchange authorization code for access token
     const body = new URLSearchParams({
       code,
       client_id: cfg.client_id,
@@ -812,7 +812,7 @@ if (platform === 'youtube') {
 }
 
 
-// ===== SAFE SAVE (WITH AUTO ROLLBACK) =====
+// SAFE SAVE
 try {
 
   user.socials = user.socials || {};
@@ -830,7 +830,7 @@ try {
 
   console.error('Database save failed:', saveErr.message);
 
-  // 🔥 Revoke token if DB fails
+  // Revoke token if DB fails
   if (tokenData?.access_token) {
     try {
 
@@ -873,7 +873,7 @@ try {
 });
 
 // =======================
-// DELETE Disconnect platform (for all platforms)
+// DELETE Disconnect platform
 // =======================
 router.delete('/connections/:platform', async (req, res) => {
   const { platform } = req.params;
@@ -892,7 +892,7 @@ router.delete('/connections/:platform', async (req, res) => {
     return res.status(401).json({ error: 'Invalid token' });
   }
 
-  // ✅ Support both JWT formats
+  // Support both JWT formats
   const userId = decoded.id || decoded._id;
   if (!userId) {
     return res.status(401).json({ error: 'Invalid token payload' });
@@ -948,7 +948,7 @@ router.delete('/connections/:platform', async (req, res) => {
     }
 
     // =======================
-    // 🔥 HARD DELETE in Mongo
+    // HARD DELETE in Mongo
     // =======================
     await User.updateOne(
       { _id: userId },
@@ -1094,7 +1094,7 @@ router.get("/discord", (req, res) => {
 
 
 // =======================
-// Discord OAuth Callback (MATCHED TO SIGNUP FLOW)
+// Discord OAuth Callback
 // =======================
 router.get("/discord/callback", async (req, res) => {
   const { code } = req.query;
@@ -1192,7 +1192,7 @@ router.get("/discord/callback", async (req, res) => {
     const email = discord.email;
 
     // =======================
-    // Duplicate check (same as signup flow)
+    // Duplicate check
     // =======================
     const existingUser = await User.findOne({
       $or: [
@@ -1209,7 +1209,7 @@ router.get("/discord/callback", async (req, res) => {
     // =======================
     // Create user (MATCHED TO SIGNUP LOGIC)
     // =======================
-    console.log("🔥 DISCORD USER CREATION START");
+    console.log("DISCORD USER CREATION START");
 
     const randomPassword = crypto.randomBytes(32).toString("hex");
 
@@ -1233,11 +1233,11 @@ const user = new User({
   tokenVersion: 0
 });
     
-    console.log("⏳ Saving Discord user to MongoDB...");
+    console.log("Saving Discord user to MongoDB...");
 
     const savedUser = await user.save();
 
-    console.log("✅ DISCORD USER CREATED:", savedUser._id);
+    console.log("DISCORD USER CREATED:", savedUser._id);
 
     // =======================
     // SUCCESS REDIRECT
