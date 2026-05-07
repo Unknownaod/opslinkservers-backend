@@ -1075,8 +1075,6 @@ router.post('/qr-subscribe', (req, res) => {
   res.status(400).json({ error: 'Socket not found or server not initialized' });
 });
 
-send me all this fixed
-
 // =======================
 // Discord OAuth Start
 // =======================
