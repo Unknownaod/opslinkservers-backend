@@ -1075,8 +1075,27 @@ router.post('/qr-subscribe', (req, res) => {
   res.status(400).json({ error: 'Socket not found or server not initialized' });
 });
 
+send me all this fixed
+
 // =======================
-// Discord OAuth Callback (FIXED)
+// Discord OAuth Start
+// =======================
+router.get("/discord", (req, res) => {
+
+  const url =
+    "https://discord.com/oauth2/authorize" +
+    `?client_id=${process.env.DISCORD_CLIENT_ID}` +
+    "&response_type=code" +
+    "&scope=identify%20email" +
+    "&prompt=consent" +
+    `&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI)}`;
+
+  res.redirect(url);
+
+});
+
+// =======================
+// Discord OAuth Callback (Robust FIXED)
 // =======================
 router.get("/discord/callback", async (req, res) => {
   const { code } = req.query;
@@ -1111,38 +1130,61 @@ router.get("/discord/callback", async (req, res) => {
     let tokenData;
     try {
       tokenData = JSON.parse(rawToken);
-    } catch {
+    } catch (err) {
+      console.error("Discord returned non-JSON token:", rawToken);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_invalid`);
     }
 
     if (!tokenRes.ok || !tokenData.access_token) {
+      console.error("Discord token error:", tokenData);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_token_failed`);
     }
 
     const accessToken = tokenData.access_token;
 
     // =======================
-    // Fetch Discord profile
+    // Fetch profile (with 429 handling)
     // =======================
-    const profileRes = await fetch("https://discord.com/api/users/@me", {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    const rawProfile = await profileRes.text();
-
     let discord;
-    try {
-      discord = JSON.parse(rawProfile);
-    } catch {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_invalid`);
+    let retries = 0;
+
+    while (retries < 3) {
+      const profileRes = await fetch("https://discord.com/api/users/@me", {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (profileRes.status === 429) {
+        const retryAfter = profileRes.headers.get("Retry-After") || 1;
+        await new Promise(r => setTimeout(r, retryAfter * 1000));
+        retries++;
+        continue;
+      }
+
+      const rawProfile = await profileRes.text();
+
+      try {
+        discord = JSON.parse(rawProfile);
+      } catch (err) {
+        console.error("Discord profile returned non-JSON:", rawProfile);
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_invalid`);
+      }
+
+      if (!profileRes.ok) {
+        console.error("Discord profile error:", discord);
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_failed`);
+      }
+
+      break;
     }
 
-    if (!profileRes.ok || !discord?.id || !discord?.username || !discord?.email) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_profile_failed`);
+    if (!discord || !discord.id || !discord.username || !discord.email) {
+      console.error("Discord missing required fields:", discord);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_missing_fields`);
     }
 
     const discordID = discord.id;
     const discordUsername = discord.username;
+
     const discordTag =
       discord.discriminator && discord.discriminator !== "0"
         ? `${discord.username}#${discord.discriminator}`
@@ -1168,6 +1210,8 @@ router.get("/discord/callback", async (req, res) => {
     // =======================
     // Create user
     // =======================
+    console.log("🔥 START USER CREATION PROCESS");
+
     const randomPassword = crypto.randomBytes(32).toString("hex");
 
     const user = new User({
@@ -1179,12 +1223,14 @@ router.get("/discord/callback", async (req, res) => {
       isVerified: true
     });
 
+    console.log("⏳ Attempting Mongo save...");
+
     await user.save();
 
-    console.log("✅ Discord user created:", user._id);
+    console.log("✅ USER SAVED SUCCESSFULLY:", user._id);
 
     // =======================
-    // SUCCESS REDIRECT (ONLY ONCE)
+    // SINGLE CLEAN REDIRECT (FIXED)
     // =======================
     return res.redirect(
       `${process.env.FRONTEND_URL}/auth/signup/?success=discord_created&email=${encodeURIComponent(email)}&password=${encodeURIComponent(randomPassword)}`
