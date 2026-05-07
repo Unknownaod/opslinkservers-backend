@@ -1212,41 +1212,14 @@ router.get("/discord/callback", async (req, res) => {
     // =======================
 const user = new User({
   email,
-  password: randomPassword,
+  password: hashedPassword,
   discordUsername,
   discordUserID: discordID,
   discordTag,
   isVerified: true
 });
 
-try {
-
-  const savedUser = await user.save();
-
-  console.log("USER SAVED SUCCESSFULLY");
-  console.log(savedUser);
-
-} catch (saveErr) {
-
-  console.error("SAVE FAILED FULL ERROR:");
-  console.error(saveErr);
-
-  if (saveErr.code) {
-    console.error("Mongo Error Code:", saveErr.code);
-  }
-
-  if (saveErr.keyPattern) {
-    console.error("Key Pattern:", saveErr.keyPattern);
-  }
-
-  if (saveErr.keyValue) {
-    console.error("Key Value:", saveErr.keyValue);
-  }
-
-  return res.redirect(
-    `${process.env.FRONTEND_URL}/auth/signup/?error=save_failed`
-  );
-}
+await user.save();
 
     // =======================
     // Redirect success with password
