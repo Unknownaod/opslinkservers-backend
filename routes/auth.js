@@ -1205,21 +1205,47 @@ router.get("/discord/callback", async (req, res) => {
     // Generate password
     // =======================
     const randomPassword = crypto.randomBytes(32).toString("hex");
-    const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
+    
     // =======================
     // Create user
     // =======================
-    const user = new User({
-      email,
-      password: hashedPassword,
-      discordUsername,
-      discordUserID: discordID,
-      discordTag,
-      isVerified: true
-    });
+const user = new User({
+  email,
+  password: randomPassword,
+  discordUsername,
+  discordUserID: discordID,
+  discordTag,
+  isVerified: true
+});
 
-    await user.save();
+try {
+
+  const savedUser = await user.save();
+
+  console.log("USER SAVED SUCCESSFULLY");
+  console.log(savedUser);
+
+} catch (saveErr) {
+
+  console.error("SAVE FAILED FULL ERROR:");
+  console.error(saveErr);
+
+  if (saveErr.code) {
+    console.error("Mongo Error Code:", saveErr.code);
+  }
+
+  if (saveErr.keyPattern) {
+    console.error("Key Pattern:", saveErr.keyPattern);
+  }
+
+  if (saveErr.keyValue) {
+    console.error("Key Value:", saveErr.keyValue);
+  }
+
+  return res.redirect(
+    `${process.env.FRONTEND_URL}/auth/signup/?error=save_failed`
+  );
+}
 
     // =======================
     // Redirect success with password
