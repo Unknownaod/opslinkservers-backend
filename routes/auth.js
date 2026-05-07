@@ -1220,8 +1220,6 @@ const user = new User({
   discordUsername,
   discordUserID: discordID,
 
-  ...(discordTag ? { discordTag } : {}),
-
   role: "user",
   isPremium: false,
   isVerified: true,
