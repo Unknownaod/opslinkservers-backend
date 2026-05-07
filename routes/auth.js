@@ -1213,28 +1213,28 @@ router.get("/discord/callback", async (req, res) => {
 
     const randomPassword = crypto.randomBytes(32).toString("hex");
 
-    const user = new User({
-      email,
-      password: randomPassword,
+const user = new User({
+  email,
+  password: randomPassword,
 
-      discordUsername,
-      discordUserID: discordID,
-      discordTag,
+  discordUsername,
+  discordUserID: discordID,
 
-      role: "user",
-      isPremium: false,
+  ...(discordTag ? { discordTag } : {}),
 
-      isVerified: true,
+  role: "user",
+  isPremium: false,
+  isVerified: true,
 
-      emailVerificationToken: undefined,
-      emailVerificationExpires: undefined,
+  emailVerificationToken: undefined,
+  emailVerificationExpires: undefined,
 
-      passwordResetToken: undefined,
-      passwordResetExpires: undefined,
+  passwordResetToken: undefined,
+  passwordResetExpires: undefined,
 
-      tokenVersion: 0
-    });
-
+  tokenVersion: 0
+});
+    
     console.log("⏳ Saving Discord user to MongoDB...");
 
     const savedUser = await user.save();
