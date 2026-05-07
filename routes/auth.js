@@ -1092,8 +1092,9 @@ router.get("/discord", (req, res) => {
 
 });
 
+
 // =======================
-// Discord OAuth Callback (Robust FIXED)
+// Discord OAuth Callback (MATCHED TO SIGNUP FLOW)
 // =======================
 router.get("/discord/callback", async (req, res) => {
   const { code } = req.query;
@@ -1141,7 +1142,7 @@ router.get("/discord/callback", async (req, res) => {
     const accessToken = tokenData.access_token;
 
     // =======================
-    // Fetch profile (with 429 handling)
+    // Fetch Discord profile
     // =======================
     let discord;
     let retries = 0;
@@ -1175,7 +1176,7 @@ router.get("/discord/callback", async (req, res) => {
       break;
     }
 
-    if (!discord || !discord.id || !discord.username || !discord.email) {
+    if (!discord?.id || !discord?.username || !discord?.email) {
       console.error("Discord missing required fields:", discord);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/signup/?error=discord_missing_fields`);
     }
@@ -1191,7 +1192,7 @@ router.get("/discord/callback", async (req, res) => {
     const email = discord.email;
 
     // =======================
-    // Duplicate check
+    // Duplicate check (same as signup flow)
     // =======================
     const existingUser = await User.findOne({
       $or: [
@@ -1206,29 +1207,42 @@ router.get("/discord/callback", async (req, res) => {
     }
 
     // =======================
-    // Create user
+    // Create user (MATCHED TO SIGNUP LOGIC)
     // =======================
-    console.log("🔥 START USER CREATION PROCESS");
+    console.log("🔥 DISCORD USER CREATION START");
 
     const randomPassword = crypto.randomBytes(32).toString("hex");
 
     const user = new User({
       email,
       password: randomPassword,
+
       discordUsername,
       discordUserID: discordID,
       discordTag,
-      isVerified: true
+
+      role: "user",
+      isPremium: false,
+
+      isVerified: true,
+
+      emailVerificationToken: undefined,
+      emailVerificationExpires: undefined,
+
+      passwordResetToken: undefined,
+      passwordResetExpires: undefined,
+
+      tokenVersion: 0
     });
 
-    console.log("⏳ Attempting Mongo save...");
+    console.log("⏳ Saving Discord user to MongoDB...");
 
-    await user.save();
+    const savedUser = await user.save();
 
-    console.log("✅ USER SAVED SUCCESSFULLY:", user._id);
+    console.log("✅ DISCORD USER CREATED:", savedUser._id);
 
     // =======================
-    // SINGLE CLEAN REDIRECT (FIXED)
+    // SUCCESS REDIRECT
     // =======================
     return res.redirect(
       `${process.env.FRONTEND_URL}/auth/signup/?success=discord_created&email=${encodeURIComponent(email)}&password=${encodeURIComponent(randomPassword)}`
