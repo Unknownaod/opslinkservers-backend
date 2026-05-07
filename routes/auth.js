@@ -1204,11 +1204,12 @@ router.get("/discord/callback", async (req, res) => {
 // =======================
 // Generate password
 // =======================
+console.log("🔥 START USER CREATION PROCESS");
+
 const randomPassword = crypto.randomBytes(32).toString("hex");
 
-// =======================
-// Create user
-// =======================
+console.log("📌 Generated password:", randomPassword);
+
 const user = new User({
   email,
   password: randomPassword,
@@ -1218,16 +1219,28 @@ const user = new User({
   isVerified: true
 });
 
+console.log("📌 User object created (not saved yet):", {
+  email,
+  discordUsername,
+  discordID
+});
+
 try {
+  console.log("⏳ Attempting Mongo save...");
 
   const savedUser = await user.save();
 
-  console.log("USER SAVED SUCCESSFULLY");
-  console.log(savedUser);
+  console.log("✅ USER SAVED SUCCESSFULLY");
+  console.log("🧾 Saved User ID:", savedUser._id);
+
+  return res.redirect(
+    `${process.env.FRONTEND_URL}/auth/signup/?success=discord_created&email=${email}&password=${randomPassword}`
+  );
 
 } catch (saveErr) {
 
-  console.error("SAVE FAILED FULL ERROR:");
+  console.log("❌ SAVE FAILED");
+
   console.error(saveErr);
 
   if (saveErr.code) {
