@@ -10,7 +10,6 @@ const bcrypt = require('bcrypt');
 const router = express.Router();
 const logoURL = "https://cdn.discordapp.com/attachments/1463619235904229378/1466802083834368184/FuwELkz.png?ex=69889d64&is=69874be4&hm=d91b7dc2a57a579671ead07b48c9dcf31f17984940c54ac8029b4bf571283396";
 
-// Helper to generate sleek email HTML
 const generateEmailHTML = (title, message, buttonText, buttonURL) => `
   <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0a0a; color: #fff; padding: 40px 0;">
     <div style="max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: linear-gradient(145deg, #1b1b1b, #0a0a0a); box-shadow: 0 8px 25px rgba(0,0,0,0.5); border: 1px solid #222;">
