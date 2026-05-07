@@ -1205,6 +1205,7 @@ router.get("/discord/callback", async (req, res) => {
     // Generate password
     // =======================
     const randomPassword = crypto.randomBytes(32).toString("hex");
+    const hashedPassword = await bcrypt.hash(randomPassword, 10);
     
     // =======================
     // Create user
