@@ -8,7 +8,7 @@ const { sendEmail } = require('../utils/sendEmail');
 const bcrypt = require('bcrypt');
 
 const router = express.Router();
-const logoURL = "https://cdn.discordapp.com/attachments/1463619235904229378/1466802083834368184/FuwELkz.png?ex=69889d64&is=69874be4&hm=d91b7dc2a57a579671ead07b48c9dcf31f17984940c54ac8029b4bf571283396";
+const logoURL = "https://github.com/Unknownaod/opslinkservers-backend/blob/72c661e3519bfb5c34e53fa915c91dc391255e44/assets/opslinkservers.png";
 
 const generateEmailHTML = (title, message, buttonText, buttonURL) => `
   <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0a0a; color: #fff; padding: 40px 0;">
