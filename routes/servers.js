@@ -390,7 +390,6 @@ router.post('/:id/reviews', auth, async (req, res) => {
     } else {
       // Add new review
       const newReview = {
-        discordUserID: req.user.discordUserID,
         discordUsername: req.user.discordUsername,
         rating,
         comment: comment || '',
