@@ -8,7 +8,7 @@ const { sendEmail } = require('../utils/sendEmail');
 const bcrypt = require('bcrypt');
 
 const router = express.Router();
-const logoURL = "https://github.com/Unknownaod/opslinkservers-backend/blob/72c661e3519bfb5c34e53fa915c91dc391255e44/assets/opslinkservers.png";
+const logoURL = "https://res.cloudinary.com/dsoo8pltk/image/upload/q_auto/f_auto/v1778505614/opslinkservers_k66hqf.png";
 
 const generateEmailHTML = (title, message, buttonText, buttonURL) => `
   <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0a0a; color: #fff; padding: 40px 0;">
