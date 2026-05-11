@@ -387,17 +387,19 @@ router.post('/change-username', auth, async (req, res) => {
       return res.status(400).json({ error: 'Discord username already exists' });
     }
 
-    // Update user's Discord username
+    // Get user
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const oldUsername = user.discordUsername;
+
+    // Update user username
     user.discordUsername = newDiscordUsername;
     await user.save();
 
     // Update submitterDiscord in all servers submitted by this user
     await Server.updateMany(
-      { 'submitter': user._id },
+      { submitter: user._id },
       {
         $set: {
           'submitterDiscord.username': newDiscordUsername
@@ -405,10 +407,28 @@ router.post('/change-username', auth, async (req, res) => {
       }
     );
 
+    // =========================
+    // UPDATE REVIEWS (FIXED)
+    // =========================
+    await Server.updateMany(
+      { "reviews.discordUsername": oldUsername },
+      {
+        $set: {
+          "reviews.$[elem].discordUsername": newDiscordUsername
+        }
+      },
+      {
+        arrayFilters: [
+          { "elem.discordUsername": oldUsername }
+        ]
+      }
+    );
+
     res.status(200).json({
       message: 'Discord username updated successfully',
       discordUsername: newDiscordUsername
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
