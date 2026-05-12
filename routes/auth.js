@@ -110,34 +110,52 @@ router.post('/login', async (req, res) => {
 
     if (!user.isVerified)
       return res.status(403).json({ error: 'Please verify your email before logging in' });
+    
+    if (user.ban?.isBanned) {
+      return res.status(403).json({
+        banned: true,
+        error: 'You are banned from this platform',
+        ban: {
+          reason: user.ban.reason,
+          bannedBy: user.ban.bannedBy,
+          bannedAt: user.ban.bannedAt,
+          banId: user.ban.banId
+        }
+      });
+    }
 
     // === PREMIUM CHECK ONLY FOR SPECIFIC DOMAIN ===
     const allowedDomain = 'https://dash.opslinksystems.xyz';
-    const referer = req.get('Referer'); // Check if the request is coming from the allowed domain
+    const referer = req.get('Referer');
 
     if (referer && referer.startsWith(allowedDomain)) {
       if (!user.isPremium) {
-        return res.status(403).json({ error: 'You must be a premium user to log in here' });
+        return res.status(403).json({
+          error: 'You must be a premium user to log in here'
+        });
       }
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d'
-    });
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    res.json({
+    return res.json({
       token,
       user: {
         email: user.email,
         discordUsername: user.discordUsername,
         role: user.role,
-        isPremium: user.isPremium  // include this if frontend wants to know
+        isPremium: user.isPremium,
+        ban: user.ban?.isBanned ? user.ban : null
       }
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
