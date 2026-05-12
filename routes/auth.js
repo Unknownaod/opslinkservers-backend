@@ -141,6 +141,42 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// =======================
+// Get Current User
+// =======================
+router.get('/me', auth, async (req, res) => {
+  try {
+
+    const user = await User.findById(req.user._id || req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    return res.json({
+      _id: user._id,
+      email: user.email,
+      discordUsername: user.discordUsername,
+      discordTag: user.discordTag,
+      role: user.role,
+      isPremium: user.isPremium,
+      isVerified: user.isVerified,
+
+      ban: user.ban || {
+        isBanned: false
+      }
+    });
+
+  } catch (err) {
+    console.error('GET /me error:', err);
+
+    return res.status(500).json({
+      error: 'Server error'
+    });
+  }
+});
 
 // =======================
 // Resend Verification Email
