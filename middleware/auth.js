@@ -47,11 +47,13 @@ module.exports = async (req, res, next) => {
     }
 
     // =========================
-    // BAN CHECK
+    // BAN CHECK (ALLOW /ME ONLY)
     // =========================
+    const isMeRoute = req.originalUrl.includes('/api/auth/me');
+
     if (user.ban?.isBanned) {
 
-      // Auto unban expired bans
+      // auto-unban expired bans
       if (
         user.ban.expiresAt &&
         user.ban.expiresAt < new Date()
@@ -70,20 +72,20 @@ module.exports = async (req, res, next) => {
 
       } else {
 
-        return res.status(403).json({
-          banned: true,
-
-          error: 'Account banned',
-
-          ban: {
-            reason: user.ban.reason,
-            bannedBy: user.ban.bannedBy,
-            bannedAt: user.ban.bannedAt,
-            expiresAt: user.ban.expiresAt,
-            banId: user.ban.banId
-          }
-        });
-
+        // allow ONLY /me to continue
+        if (!isMeRoute) {
+          return res.status(403).json({
+            banned: true,
+            error: 'Account banned',
+            ban: {
+              reason: user.ban.reason,
+              bannedBy: user.ban.bannedBy,
+              bannedAt: user.ban.bannedAt,
+              expiresAt: user.ban.expiresAt,
+              banId: user.ban.banId
+            }
+          });
+        }
       }
     }
 
@@ -98,7 +100,7 @@ module.exports = async (req, res, next) => {
       role: user.role,
       isVerified: user.isVerified,
       tokenVersion: user.tokenVersion,
-      token: token,
+      token,
       ban: user.ban
     };
 
