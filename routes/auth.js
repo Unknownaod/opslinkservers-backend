@@ -110,19 +110,6 @@ router.post('/login', async (req, res) => {
 
     if (!user.isVerified)
       return res.status(403).json({ error: 'Please verify your email before logging in' });
-    
-    if (user.ban?.isBanned) {
-      return res.status(403).json({
-        banned: true,
-        error: 'You are banned from this platform',
-        ban: {
-          reason: user.ban.reason,
-          bannedBy: user.ban.bannedBy,
-          bannedAt: user.ban.bannedAt,
-          banId: user.ban.banId
-        }
-      });
-    }
 
     // === PREMIUM CHECK ONLY FOR SPECIFIC DOMAIN ===
     const allowedDomain = 'https://dash.opslinksystems.xyz';
