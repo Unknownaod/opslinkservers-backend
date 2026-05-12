@@ -62,8 +62,38 @@ const userSchema = new mongoose.Schema({
   // =========================
   tokenVersion: { type: Number, default: 0 },
 
+// =========================
+// Ban Handling
+// =========================
+ban: {
+  isBanned: {
+    type: Boolean,
+    default: false
+  },
+
+  reason: {
+    type: String,
+    default: null
+  },
+
+  bannedBy: {
+    type: String,
+    default: null
+  },
+
+  bannedAt: {
+    type: Date,
+    default: null
+  },
+
+  expiresAt: {
+    type: Date,
+    default: null
+  }
+},
+   
   // =========================
-  // Connected socials (FINAL)
+  // Connected socials
   // =========================
   socials: {
     twitch: { type: SocialSchema, default: () => ({}) },
