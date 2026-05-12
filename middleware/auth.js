@@ -98,7 +98,8 @@ module.exports = async (req, res, next) => {
       role: user.role,
       isVerified: user.isVerified,
       tokenVersion: user.tokenVersion,
-      token: token
+      token: token,
+      ban: user.ban
     };
 
     next();
